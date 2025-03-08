@@ -5,7 +5,11 @@
 - 模拟宇宙（Auto_Simulated_Universe）适配新版本差分宇宙
 - 支持 3.1 版本新增关卡和角色 [#486](https://github.com/moesnow/March7thAssistant/pull/486)
 - 支持任务完成后运行指定程序或脚本 [#453](https://github.com/moesnow/March7thAssistant/pull/453)
+- 支持每周优先运行一次差分宇宙（设置-宇宙）
+- 接入 Mirror酱 第三方应用分发平台（关于 → 更新源）
 - 修复设置培养目标后部分副本异常
+- 修复无法进入经典模拟宇宙界面
+- 修复无法正常合成消耗品 [#482](https://github.com/moesnow/March7thAssistant/issues/482)
 - 触屏模式暂不可用 [#487](https://github.com/moesnow/March7thAssistant/issues/487)
 
 ## v2025.1.20
