@@ -33,7 +33,6 @@ class Updater:
         self.cover_folder_path = os.path.abspath("./")
         self.exe_path = os.path.abspath("./assets/binary/7za.exe")
         self.aria2_path = os.path.abspath("./assets/binary/aria2c.exe")
-        self.delete_folder_path = os.path.join("./3rdparty/Fhoe-Rail", "map")
 
         self.logger.hr("获取下载链接", 0)
         if download_url is None:
@@ -180,14 +179,45 @@ class Updater:
                     os.remove(self.download_file_path)
                 return False
 
+    def is_file_locked(self, file_path):
+        """
+        检测单个文件是否被占用
+        返回 True 表示被占用
+        """
+        if not os.path.exists(file_path):
+            return False
+
+        try:
+            fd = os.open(file_path, os.O_RDWR | os.O_EXCL)
+            os.close(fd)
+            return False
+        except OSError:
+            return True
+
+    def is_folder_locked(self, folder_path):
+        """
+        检测文件夹下是否有任何文件被占用
+        返回 True 表示文件夹内有文件被占用
+        返回占用的文件列表
+        """
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            return False, []
+
+        locked_files = []
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                full_path = os.path.join(root, file)
+                if self.is_file_locked(full_path):
+                    locked_files.append(full_path)
+
+        return len(locked_files) > 0, locked_files
+
     def cover_folder(self):
         """覆盖安装最新版本的文件。"""
         self.logger.hr("覆盖", 0)
         while True:
             try:
                 self.logger.info("开始覆盖...")
-                if "full" in self.file_name and os.path.exists(self.delete_folder_path):
-                    shutil.rmtree(self.delete_folder_path)
                 shutil.copytree(self.extract_folder_path, self.cover_folder_path, dirs_exist_ok=True)
                 self.logger.info(f"覆盖完成: {green(self.cover_folder_path)}")
                 break
@@ -214,13 +244,31 @@ class Updater:
         """清理下载和解压的临时文件。"""
         self.logger.hr("清理", 0)
         self.logger.info("开始清理...")
-        try:
-            os.remove(self.download_file_path)
-            self.logger.info(f"清理完成: {green(self.download_file_path)}")
-            shutil.rmtree(self.extract_folder_path)
-            self.logger.info(f"清理完成: {green(self.extract_folder_path)}")
-        except Exception as e:
-            self.logger.error(f"清理失败: {e}")
+        while True:
+            file = self.is_file_locked(self.download_file_path)
+            if file:
+                self.logger.info(f"文件被占用: {red(self.download_file_path)}")
+                input("请手动关闭相关进程后按回车重新检测...")
+                continue
+
+            locked, files = self.is_folder_locked(self.extract_folder_path)
+            if locked:
+                self.logger.info(f"文件夹被占用: {red(self.extract_folder_path)}")
+                for f in files:
+                    self.logger.info(f"被占用文件: {red(f)}")
+                input("请手动关闭相关进程后按回车重新检测...")
+                continue
+
+            try:
+                os.remove(self.download_file_path)
+                self.logger.info(f"清理完成: {green(self.download_file_path)}")
+                shutil.rmtree(self.extract_folder_path)
+                self.logger.info(f"清理完成: {green(self.extract_folder_path)}")
+                break
+            except Exception as e:
+                self.logger.error(f"清理失败: {e}")
+                input("按回车键重试. . .")
+
         self.logger.hr("完成", 2)
 
     def run(self):
