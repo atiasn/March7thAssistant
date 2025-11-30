@@ -40,7 +40,7 @@ jobs:
         run: |
           pyinstaller -D --distpath .\dist\ -i .\assets\logo\Terminal.ico --contents-directory libraries --exclude-module PyQt5 --uac-admin -n "March7th Assistant" main.py -y
           pyinstaller -D --distpath .\dist\ -i .\assets\logo\March7th.ico --contents-directory libraries --uac-admin -n "March7th Launcher" app.py -y -w
-          pyinstaller -F --distpath .\dist\March7thAssistant\ -i .\assets\logo\Updater.ico -n "March7th Updater" --exclude-module numpy --exclude-module pandas updater.py -y
+          pyinstaller -F --distpath .\dist\March7thAssistant\ -i .\assets\logo\Updater.ico -n "March7th Updater" --exclude-module numpy --exclude-module pandas --uac-admin updater.py -y
 
       # 移动资源到dist目录
       - name: Move assets to dist directory
@@ -50,13 +50,14 @@ jobs:
           Copy-Item -Path ".\assets\" -Destination ".\dist\March7thAssistant\assets\" -Recurse -Force
           Copy-Item -Path ".\README.md" -Destination ".\dist\March7thAssistant\" -Force
 
-      # 创建压缩包
+      # 创建更新压缩包
       - name: Create archive
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           # Compress-Archive -Path .\dist\March7thAssistant\ -DestinationPath .\dist\March7thAssistant.zip -Force
-          .\assets\binary\7za.exe a -tzip .\dist\March7thAssistant.zip .\dist\March7thAssistant\
-          .\assets\binary\7za.exe a -t7z .\dist\March7thAssistant.7z .\dist\March7thAssistant\
+          Rename-Item -Path .\dist\March7thAssistant -NewName update
+          .\assets\binary\7za.exe a -t7z .\dist\update.7z .\dist\update\
+          Rename-Item -Path .\dist\update -NewName March7thAssistant
 
       # 移动第三方库到dist目录
       - name: Move 3rdparty to dist directory
@@ -82,9 +83,8 @@ jobs:
           name: March7thAssistant ${{ github.ref_name }}
           files: |
             ./dist/March7thAssistant_full.zip
-            ./dist/March7thAssistant.zip
             ./dist/March7thAssistant_full.7z
-            ./dist/March7thAssistant.7z
+            ./dist/update.7z
           prerelease: false
           make_latest: true
 
