@@ -2,9 +2,9 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog
 from qfluentwidgets import FluentIcon as FIF
-from qfluentwidgets import qconfig, ScrollArea, PrimaryPushButton, InfoBar, InfoBarPosition, PushButton
+from qfluentwidgets import qconfig, ScrollArea, PrimaryPushButton, InfoBar, InfoBarPosition, PushButton, MessageBox
 from .common.style_sheet import StyleSheet
-from .tools.warp_export import warpExport, WarpExport
+from .tools.warp_export import warpExport, WarpExport, detect_format, uigf_to_srgf_hkrpg, srgf_to_uigf_hkrpg
 import pyperclip
 import json
 import markdown
@@ -14,6 +14,7 @@ import openpyxl
 from openpyxl.styles import Font
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+import time
 
 
 class WarpInterface(ScrollArea):
@@ -92,13 +93,26 @@ class WarpInterface(ScrollArea):
 
     def __onImportBtnClicked(self):
         try:
-            path, _ = QFileDialog.getOpenFileName(self, "支持 SRGF 数据格式导入", "", "星穹铁道抽卡记录文件 (*.json)")
+            path, _ = QFileDialog.getOpenFileName(self, "导入抽卡记录", "", "UIGF / SRGF 格式 (*.json)")
             if not path:
                 return
 
             with open(path, 'r', encoding='utf-8') as file:
                 config = json.load(file)
+                fmt = detect_format(config)
+                if fmt == "uigf":
+                    config = uigf_to_srgf_hkrpg(config)
+                elif fmt == "neither":
+                    raise ValueError("Invalid format")
             warp = WarpExport(config)
+            warp.info['export_timestamp'] = int(time.time())
+            warp.info['export_app'] = "March7thAssistant"
+            try:
+                with open("./assets/config/version.txt", 'r', encoding='utf-8') as file:
+                    version = file.read()
+            except Exception:
+                version = ""
+            warp.info['export_app_version'] = version
             config = warp.export_data()
             with open("./warp.json", 'w', encoding='utf-8') as file:
                 json.dump(config, file, ensure_ascii=False, indent=4)
@@ -130,12 +144,27 @@ class WarpInterface(ScrollArea):
             with open("./warp.json", 'r', encoding='utf-8') as file:
                 config = json.load(file)
             warp = WarpExport(config)
-            path, _ = QFileDialog.getSaveFileName(self, "支持 SRGF 数据格式导出", f"SRGF_{warp.get_uid()}.json", "星穹铁道抽卡记录文件 (*.json)")
+            default_name = f"UIGF_{warp.get_uid()}"
+
+            path, _ = QFileDialog.getSaveFileName(
+                self,
+                "导出抽卡记录",
+                f"{default_name}",
+                "UIGF 格式 (*.json);;SRGF 格式 (*.srgf.json)"
+            )
             if not path:
                 return
 
+            is_srgf = path.lower().endswith(".srgf.json")
+
+            if is_srgf:
+                data_to_save = config
+            else:
+                # SRGF → UIGF
+                data_to_save = srgf_to_uigf_hkrpg(config)
+
             with open(path, 'w', encoding='utf-8') as file:
-                json.dump(config, file, ensure_ascii=False, indent=4)
+                json.dump(data_to_save, file, ensure_ascii=False, indent=4)
 
             os.startfile(os.path.dirname(path))
 
@@ -286,29 +315,37 @@ class WarpInterface(ScrollArea):
             )
 
     def __onClearBtnClicked(self):
-        try:
-            os.remove("./warp.json")
-            self.setContent()
-            InfoBar.success(
-                title=self.tr('清空完成(＾∀＾●)'),
-                content="",
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=1000,
-                parent=self
-            )
-        except Exception as e:
-            print(e)
-            InfoBar.warning(
-                title=self.tr('清空失败(╥╯﹏╰╥)'),
-                content="",
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=1000,
-                parent=self
-            )
+        message_box = MessageBox(
+            self.tr("清空抽卡记录"),
+            self.tr("确定要清空抽卡记录吗？此操作不可撤销。"),
+            self.window()
+        )
+        message_box.yesButton.setText('确认')
+        message_box.cancelButton.setText('取消')
+        if message_box.exec():
+            try:
+                os.remove("./warp.json")
+                self.setContent()
+                InfoBar.success(
+                    title=self.tr('清空完成(＾∀＾●)'),
+                    content="",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=1000,
+                    parent=self
+                )
+            except Exception as e:
+                print(e)
+                InfoBar.warning(
+                    title=self.tr('清空失败(╥╯﹏╰╥)'),
+                    content="",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=1000,
+                    parent=self
+                )
 
     def setContent(self):
         try:

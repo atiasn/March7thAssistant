@@ -702,8 +702,7 @@ class SettingInterface(ScrollArea):
             FIF.POWER_BUTTON,
             self.tr('任务完成后'),
             self.tr('其中“退出”指退出游戏，“循环”指7×24小时无人值守循环运行程序（仅限完整运行生效）'),
-            texts={'无': 'None', '退出': 'Exit', '循环': 'Loop',
-                   '关机': 'Shutdown', '睡眠': 'Sleep', '休眠': 'Hibernate', '重启': 'Restart', '注销': 'Logoff', '运行脚本': 'RunScript'}
+            texts={'无': 'None', '退出': 'Exit', '循环': 'Loop', '关机': 'Shutdown', '睡眠': 'Sleep', '休眠': 'Hibernate', '重启': 'Restart', '注销': 'Logoff', '关闭显示器': 'TurnOffDisplay', '运行脚本': 'RunScript'}
         )
         self.ScriptPathCard = PushSettingCard(
             self.tr('修改'),
@@ -797,7 +796,7 @@ class SettingInterface(ScrollArea):
         self.autoBattleDetectEnableCard = SwitchSettingCard1(
             FIF.ROBOT,
             self.tr('启用自动战斗检测'),
-            "（不支持云·星穹铁道）只对清体力和逐光捡金场景生效，并在启动游戏前自动检测并修改注册表值",
+            "游戏启动前通过修改注册表或本地存储开启自动战斗，并在清体力和逐光捡金场景中检测并保持自动战斗状态",
             "auto_battle_detect_enable"
         )
         self.autoSetResolutionEnableCard = SwitchSettingCard1(
