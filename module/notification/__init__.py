@@ -1,7 +1,7 @@
 from module.config import cfg
 from module.logger import log
 from module.notification.matrix import MatrixNotifier
-from module.notification.notification import Notification
+from module.notification.notification import Notification, NotificationLevel
 # 导入所有通知器类型
 from module.notification.onepush import OnepushNotifier
 from module.notification.serverchan3 import ServerChanNotifier
@@ -13,7 +13,9 @@ from module.notification.gocqhttp import GocqhttpNotifier
 from module.notification.wechatworkapp import WeChatworkappNotifier
 from module.notification.custom import CustomNotifier
 from module.notification.lark import LarkNotifier
-from module.notification.wechatworkbot import WeChatWorkBotNotifier  # 新添加的导入
+from module.notification.wechatworkbot import WeChatWorkBotNotifier
+from module.notification.kook import KOOKNotifier
+from module.notification.webhook import WebhookNotifier
 
 
 class NotifierFactory:
@@ -26,10 +28,12 @@ class NotifierFactory:
         "smtp": SMTPNotifier,
         "gocqhttp": GocqhttpNotifier,
         "wechatworkapp": WeChatworkappNotifier,
-        "wechatworkbot": WeChatWorkBotNotifier,  # 新添加的通知器
+        "wechatworkbot": WeChatWorkBotNotifier,
         "custom": CustomNotifier,
         "lark": LarkNotifier,
         "serverchan3": ServerChanNotifier,
+        "kook": KOOKNotifier,
+        "webhook": WebhookNotifier,
     }
 
     @staticmethod
@@ -49,6 +53,10 @@ class NotifierFactory:
 
 
 notif = Notification(cfg.notify_template['Title'], log)
+
+# 设置通知级别过滤器
+notify_level = cfg.get_value('notify_level', NotificationLevel.ALL)
+notif.set_level_filter(notify_level)
 
 # 创建并注册Notifier实例
 for key, value in cfg.config.items():

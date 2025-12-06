@@ -2,6 +2,7 @@ from module.screen import screen
 from module.automation import auto
 from module.config import cfg
 from module.logger import log
+from module.notification.notification import NotificationLevel
 from tasks.base.base import Base
 from utils.date import Date
 from typing import Literal, Tuple, Optional
@@ -19,8 +20,8 @@ class CurrencyWarsCharacter:
 
 
 class CurrencyWars:
-    def __init__(self, send_notification: bool = True):
-        self.send_notification = send_notification  # 是否发送通知
+    def __init__(self):
+        self.screenshot = None  # 任务截图
         self.peipei_count: int = 0  # 佩佩和叽米
         self.diamond_count: int = 0  # 财富宝钻
         self.current_level: int = 0  # 当前可部署角色等级
@@ -103,12 +104,12 @@ class CurrencyWars:
     def start(self):
         log.hr('准备货币战争', '0')
         if self.run():
-            self.get_reward()
-            if self.send_notification:
-                Base.send_notification_with_screenshot("货币战争已完成")
+            Base.send_notification_with_screenshot("货币战争已完成", NotificationLevel.ALL, self.screenshot)
+            self.screenshot = None
         else:
-            if self.send_notification:
-                Base.send_notification_with_screenshot("货币战争未完成")
+            Base.send_notification_with_screenshot("货币战争未完成", NotificationLevel.ERROR, self.screenshot)
+            self.screenshot = None
+        self.get_reward()
         if Date.is_next_mon_x_am(cfg.currencywars_timestamp, cfg.refresh_hour):
             self.check_currency_wars_score()
         log.hr("完成", 2)
@@ -146,8 +147,7 @@ class CurrencyWars:
             if auto.click_element("积分", 'text', crop=(28.0 / 1920, 880.0 / 1080, 435.0 / 1920, 175.0 / 1080), include=True):
                 if auto.click_element("./assets/images/zh_CN/universe/one_key_receive.png", "image", 0.9, max_retries=10):
                     if auto.find_element("./assets/images/zh_CN/base/click_close.png", "image", 0.8, max_retries=10):
-                        if self.send_notification:
-                            Base.send_notification_with_screenshot("货币战争奖励已领取")
+                        Base.send_notification_with_screenshot("货币战争奖励已领取", NotificationLevel.ALL)
                         auto.click_element("./assets/images/zh_CN/base/click_close.png", "image", 0.8, max_retries=10)
                         time.sleep(1)
                         auto.press_key("esc")
@@ -177,6 +177,8 @@ class CurrencyWars:
         选择关卡难度
         """
         log.info("选择关卡")
+        # 避免低性能设备加载过慢
+        time.sleep(6)  # 等待界面加载
         pos = auto.find_element("./assets/images/screen/currency_wars/level_down.png", "image", 100000)
         for _ in range(40):
             if auto.find_element(f"./assets/images/screen/currency_wars/level_1.png", "image", 0.95, crop=(440.0 / 1920, 892.0 / 1080, 385.0 / 1920, 137.0 / 1080)):
@@ -357,9 +359,10 @@ class CurrencyWars:
         ]
 
         for characters, positions in character_groups:
-            for idx, char in enumerate(characters):
-                if char.name:
-                    self._equip_single_character(positions[idx])
+            indexed_chars = [(idx, c) for idx, c in enumerate(characters) if c.name]
+            indexed_chars.sort(key=lambda item: (-item[1].money, item[0]))
+            for idx, _ in indexed_chars:
+                self._equip_single_character(positions[idx])
 
     def _equip_single_character(self, position):
         """
@@ -431,7 +434,7 @@ class CurrencyWars:
             if name and name not in top_forward_names and len(top_forward) < min(forward_slots, limit):
                 top_forward.append(item)
                 top_forward_names.add(name)
-            else:
+            elif name in top_forward_names:
                 duplicates_forward.append(item)
 
         # 剩余角色按 money 降序，金额相同 pos 优先级 forward > backward > all，同样去重，重复的放末尾
@@ -488,8 +491,32 @@ class CurrencyWars:
                 continue
 
             assigned["prepare"].append(item)
+
         log.debug(
             f"计算区域结果: {self.zone_name_localization['forward']}={len(assigned['forward'])}, {self.zone_name_localization['backward']}={len(assigned['backward'])}, {self.zone_name_localization['prepare']}={len(assigned['prepare'])}, total used={used}/{limit}")
+
+        # 无效优化，前台角色放后台不会自动使用技能，保持队伍中有角色空缺即可
+        # # 补充逻辑：如果 forward 已满且 used < limit，从 prepare 移动角色到 backward
+        # if len(assigned['forward']) == min(forward_slots, limit) and used < limit:
+        #     log.debug(f"前台已满({len(assigned['forward'])}个)，但总使用量({used})未达上限({limit})，尝试从备战席补充到后台")
+        #     # 从 prepare 中找出不重名的角色
+        #     to_move = []
+        #     for item in assigned["prepare"]:
+        #         if used >= limit:
+        #             break
+        #         name = item["c"].name
+        #         if name and name not in used_names:  # 不重名
+        #             to_move.append(item)
+        #             used_names.add(name)
+        #             used += 1
+
+        #     # 移动到 backward 末尾
+        #     if to_move:
+        #         assigned["prepare"] = [item for item in assigned["prepare"] if item not in to_move]
+        #         assigned["backward"].extend(to_move)
+        #         log.debug(f"从备战席移动 {len(to_move)} 个角色到后台: {[item['c'].name for item in to_move]}")
+        #         log.debug(
+        #             f"调整后区域结果: {self.zone_name_localization['forward']}={len(assigned['forward'])}, {self.zone_name_localization['backward']}={len(assigned['backward'])}, {self.zone_name_localization['prepare']}={len(assigned['prepare'])}, total used={used}/{limit}")
 
         # 4️⃣ 填充空位
         for zone in ["forward", "backward"]:
@@ -498,6 +525,31 @@ class CurrencyWars:
 
         while len(assigned["prepare"]) < len(self.prepare_characters):
             assigned["prepare"].append({"c": CurrencyWarsCharacter(None, None), "zone": "prepare", "idx": None, "pos_ref": None})
+        # 显示每个区域的角色
+        for zone in ["forward", "backward", "prepare"]:
+            names = [item["c"].name for item in assigned[zone]]
+            log.debug(f"区域 {self.zone_name_localization[zone]} 角色: {names}")
+
+        # 将已在目标区域的角色提前放置到对应索引，减少后续交换
+        for zone in ("forward", "backward"):
+            current_zone_list = getattr(self, f"{zone}_characters")
+            target_list = assigned[zone]
+            for idx, cur_char in enumerate(current_zone_list):
+                cur_name = cur_char.name
+                if not cur_name:
+                    continue
+                if target_list[idx]["c"].name == cur_name:
+                    continue
+                swap_idx = None
+                for j in range(len(target_list)):
+                    if j == idx:
+                        continue
+                    if target_list[j]["c"].name == cur_name:
+                        swap_idx = j
+                        break
+                if swap_idx is not None:
+                    target_list[idx], target_list[swap_idx] = target_list[swap_idx], target_list[idx]
+                    log.debug(f"预先对齐 {self.zone_name_localization[zone]} 索引 {idx}: {cur_name}")
 
         # 显示每个区域的角色
         for zone in ["forward", "backward", "prepare"]:
@@ -860,8 +912,12 @@ class CurrencyWars:
 
             money = self.check_money()
             if money >= 4:
-                auto.press_key("f")
-                time.sleep(1)
+                times = min(money // 4, 10)
+                log.info(f"连续购买经验 {times} 次")
+                for _ in range(times):
+                    auto.press_key("f")
+                    time.sleep(0.1)
+                time.sleep(2)
 
                 # 检查货币是否有变化
                 if previous_money is not None and money == previous_money:
@@ -1009,7 +1065,8 @@ class CurrencyWars:
                 pos = "all"
             money = auto.get_single_line_text(crop=char_money_crop)
             if not money or not money.isdigit():
-                raise ValueError("无法识别角色投资金额")
+                log.error(f"无法识别角色 {name} 的费用信息，默认为 1")
+                money = "1"
             log.info(f"识别到角色：{name}，站位：{self.pos_name_localization[pos]}，费用：{money}")
 
             # 创建角色对象并缓存
@@ -1053,9 +1110,11 @@ class CurrencyWars:
             text = box[1][0]
             if "对局胜利" in text:
                 self.result = True
+                self.screenshot = auto.screenshot
                 return
             elif "对局未完成" in text:
                 self.result = False
+                self.screenshot = auto.screenshot
                 return
 
     def check_special_characters(self, crop: Tuple[float, float, float, float]):
@@ -1113,8 +1172,10 @@ class CurrencyWars:
             # 大裁员：出售场上和备战席的所有角色
             # 人力重组：移除场上和备战席的所有角色
             # 节省工位：在接下来3个节点只有3个备战席位置
+            # 奋斗协议：购买经验值消耗7点小队生命值而非金币
+            black_list = ('深井角斗场', '佩佩客串', '钻石商人', '现金为王', '降本增效', '大裁员', '人力重组', '节省工位', '奋斗协议')
             for pos in button_positions:
-                if auto.find_element(('深井角斗场', '佩佩客串', '钻石商人', '现金为王', '降本增效', '大裁员', '人力重组', '节省工位'), 'text', crop=pos, include=True):
+                if auto.find_element(black_list, 'text', crop=pos, include=True):
                     log.debug(f"跳过{auto.matched_text}选项")
                     continue
                 if auto.click_element("./assets/images/screen/currency_wars/new.png", "image", 0.9, crop=pos):
@@ -1125,7 +1186,7 @@ class CurrencyWars:
 
             if not has_choose:
                 for pos in button_positions:
-                    if auto.find_element(('深井角斗场', '佩佩客串', '钻石商人', '现金为王', '降本增效', '大裁员', '人力重组', '节省工位'), 'text', crop=pos, include=True):
+                    if auto.find_element(black_list, 'text', crop=pos, include=True):
                         log.debug(f"跳过{auto.matched_text}选项")
                         continue
                     auto.click_element(button_positions_click[button_positions.index(pos)], 'crop')

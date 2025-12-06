@@ -17,6 +17,7 @@ import base64
 from module.config import cfg
 from module.logger import log
 from module.notification import notif
+from module.notification.notification import NotificationLevel
 from module.ocr import ocr
 
 import tasks.game as game
@@ -54,7 +55,7 @@ def run_sub_task(action):
     game.start()
 
     def currencywars(loop=False):
-        war = CurrencyWars(not loop)
+        war = CurrencyWars()
         if loop:
             while True:
                 war.start()
@@ -103,7 +104,7 @@ def run_sub_task_update(action):
 
 
 def run_notify_action():
-    notif.notify(cfg.notify_template['TestMessage'], "./assets/app/images/March7th.jpg")
+    notif.notify(content=cfg.notify_template['TestMessage'], image="./assets/app/images/March7th.jpg", level=NotificationLevel.ALL)
     input("按回车键关闭窗口. . .")
     sys.exit(0)
 
@@ -159,7 +160,16 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as e:
         log.error(cfg.notify_template['ErrorOccurred'].format(error=e))
-        notif.notify(cfg.notify_template['ErrorOccurred'].format(error=e))
+        # 保存错误截图
+        screenshot_path = log.save_error_screenshot()
+        # 发送通知，如果有截图则附带截图
+        notify_kwargs = {
+            'content': cfg.notify_template['ErrorOccurred'].format(error=e),
+            'level': NotificationLevel.ERROR
+        }
+        if screenshot_path:
+            notify_kwargs['image'] = screenshot_path
+        notif.notify(**notify_kwargs)
         if not cfg.exit_after_failure:
             input("按回车键关闭窗口. . .")
         sys.exit(1)
