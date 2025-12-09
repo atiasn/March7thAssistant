@@ -24,7 +24,6 @@ from utils.screenshot_util import save_error_screenshot
 import tasks.game as game
 import tasks.reward as reward
 import tasks.challenge as challenge
-import tasks.tool as tool
 import tasks.version as version
 
 from tasks.daily.daily import Daily
@@ -128,9 +127,6 @@ def main(action=None):
     # 子任务 更新项目
     elif action in ["universe_update", "fight_update"]:
         run_sub_task_update(action)
-
-    elif action in ["screenshot", "plot"]:
-        tool.start(action)
 
     elif action == "game":
         game.start()
