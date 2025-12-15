@@ -20,7 +20,8 @@ class StartMarch7thAssistantSwitchSettingCard(SettingCard):
             self.tr('关'), self, IndicatorPosition.RIGHT)
 
         self.task_name = "StartMarch7thAssistant"
-        self.program_path = os.path.abspath("./March7th Assistant.exe")
+        self.program_path = os.path.abspath("./March7th Launcher.exe")
+        self.program_args = "main"
 
         self.setValue(is_task_exists(self.task_name))
 
@@ -34,7 +35,7 @@ class StartMarch7thAssistantSwitchSettingCard(SettingCard):
         """ switch button checked state changed slot """
         self.setValue(isChecked)
         if isChecked:
-            create_task(task_name=self.task_name, program_path=self.program_path)
+            create_task(task_name=self.task_name, program_path=self.program_path, program_args=self.program_args)
         else:
             delete_task(task_name=self.task_name)
 
@@ -315,8 +316,11 @@ class SwitchSettingCardHotkey(SettingCard):
 
     def _onClicked(self):
         from app.sub_interfaces.hotkey_interface import HotkeyInterface
+        from app.common.signal_bus import signalBus
         hotkey_interface = HotkeyInterface(self.window())
-        hotkey_interface.exec()
+        if hotkey_interface.exec():
+            # 用户点击确认，发送热键更新信号
+            signalBus.hotkeyChangedSignal.emit()
 
 
 class SwitchSettingCardCloudGameStatus(SettingCard):

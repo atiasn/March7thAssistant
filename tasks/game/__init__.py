@@ -9,6 +9,7 @@ from utils.registry.gameaccount import gamereg_uid
 from .starrailcontroller import StarRailController
 
 from utils.date import Date
+from utils.console import pause_on_success
 from tasks.power.power import Power
 from module.game import cloud_game, get_game_controller
 from module.logger import log
@@ -19,6 +20,7 @@ from module.notification import notif
 from module.notification.notification import NotificationLevel
 from module.ocr import ocr
 from module.screen import screen
+from utils.console import is_gui_started
 
 starrail = StarRailController(cfg=cfg, logger=log)
 
@@ -157,6 +159,7 @@ def start_game():
             # time.sleep(10)    #dont need to wait
             if not wait_until(lambda: cloud_game_check_and_enter(), 600):
                 raise TimeoutError("查找并点击进入按钮超时")
+            time.sleep(10)
 
     for retry in range(MAX_RETRY):
         try:
@@ -202,8 +205,7 @@ def stop(detect_loop=False):
             get_game_controller().shutdown(cfg.after_finish)
         log.hr("完成", 2)
         if cfg.after_finish not in ["Shutdown", "Sleep", "Hibernate", "Restart", "Logoff", "TurnOffDisplay", "RunScript"]:
-            if cfg.pause_after_success:
-                input("按回车键关闭窗口. . .")
+            pause_on_success()
         sys.exit(0)
 
 
@@ -221,7 +223,7 @@ def after_finish_is_loop():
     if cfg.loop_mode == "power":
         current_power = Power.get()
         if current_power >= cfg.power_limit:
-            log.info(f"🟣开拓力 >= {cfg.power_limit}")
+            log.info(f"开拓力 >= {cfg.power_limit}")
             log.info("即将再次运行")
             log.hr("完成", 2)
             return
@@ -234,6 +236,14 @@ def after_finish_is_loop():
         scheduled_time = cfg.scheduled_time
         wait_time = Date.time_to_seconds(scheduled_time)
         future_time = Date.calculate_future_time(scheduled_time)
+
+    # 图形界面不支持循环模式，提前检查并退出
+    if is_gui_started():
+        msg = "通过图形界面启动，程序不支持循环模式，请使用日志界面的定时运行功能"
+        log.error(msg)
+        notif.notify(content=msg, level=NotificationLevel.ERROR)
+        log.hr("完成", 2)
+        sys.exit(0)
 
     log.info(cfg.notify_template['ContinueTime'].format(time=future_time))
     notif.notify(content=cfg.notify_template['ContinueTime'].format(time=future_time), level=NotificationLevel.ALL)

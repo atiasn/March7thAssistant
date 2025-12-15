@@ -649,12 +649,6 @@ class SettingInterface(ScrollArea):
             self.tr("最大排队等待时间（分钟）"),
             ''
         )
-        self.browserDownloadUseMirrorCard = SwitchSettingCard1(
-            FIF.CLOUD_DOWNLOAD,
-            self.tr("使用国内镜像下载浏览器和驱动"),
-            None,
-            "browser_download_use_mirror"
-        )
         # self.cloudGameVideoQualityCard = ComboBoxSettingCard2(
         #     "cloud_game_video_quality",
         #     FIF.VIDEO,
@@ -675,12 +669,38 @@ class SettingInterface(ScrollArea):
         #     "cloud_game_status_bar_enable",
         #     "cloud_game_status_bar_type"
         # )
-        self.browserTypeCard = ComboBoxSettingCard2(
+        self.browserTypeCard = ExpandableComboBoxSettingCard(
             "browser_type",
             FIF.GLOBE,
             self.tr("浏览器类型"),
             self.tr("‘集成’ 模式下，会自动下载浏览器"),
             {"集成（Chrome For Testing）": "integrated", "Chrome": "chrome", "Edge": "edge"}
+        )
+        self.browserDownloadUseMirrorCard = SwitchSettingCard1(
+            FIF.CLOUD_DOWNLOAD,
+            self.tr("使用国内镜像下载浏览器和驱动"),
+            None,
+            "browser_download_use_mirror"
+        )
+        self.browserPersistentCard = SwitchSettingCard1(
+            FIF.DOWNLOAD,
+            self.tr("保存浏览器数据（游戏的登录状态和本地数据）"),
+            None,
+            "browser_persistent_enable"
+        )
+        self.browserScaleCard = ComboBoxSettingCard2(
+            "browser_scale_factor",
+            FIF.ZOOM,
+            self.tr("浏览器画面缩放（DPI）"),
+            self.tr("非 1920x1080 屏幕下，云游戏画面无法铺满屏幕，可以调整这个值改变画面缩放"),
+            texts={'50%': 0.5, '67%': 0.67, '75%': 0.75, '80%': 0.80, '90%': 0.90, '无缩放（100%）': 1.0,
+                   '110%': 1.10, '125%': 1.25, '150%': 1.5, '175%': 1.75, '200%': 2.0}
+        )
+        self.browserLaunchArgCard = PushSettingCardEval(
+            self.tr("修改"),
+            FIF.CODE,
+            self.tr("浏览器启动参数"),
+            "browser_launch_argument"
         )
         self.browserHeadlessCard = SwitchSettingCard1(
             FIF.VIEW,
@@ -694,26 +714,6 @@ class SettingInterface(ScrollArea):
         #     None,
         #     "browser_dump_cookies_enable"
         # )
-        self.browserPersistentCard = SwitchSettingCard1(
-            FIF.DOWNLOAD,
-            self.tr("保存浏览器数据（游戏的登录状态和本地数据）"),
-            None,
-            "browser_persistent_enable"
-        )
-        self.browserScaleCard = ComboBoxSettingCard2(
-            "browser_scale_factor",
-            FIF.ZOOM,
-            self.tr("浏览器画面缩放（DPI）"),
-            self.tr("非 1920x1080 屏幕下，云游戏画面无法铺满屏幕，可以调整这个值改变画面缩放"),
-            texts={'50%': 0.5, '67%': 0.67, '75%': 0.75, '80%': 0.80, '90%': 0.90, '无缩放（100%）': 1.0,
-                   '110%': 1.10,'125%': 1.25, '150%': 1.5, '175%': 1.75, '200%': 2.0}
-        )
-        self.browserLaunchArgCard = PushSettingCardEval(
-            self.tr("修改"),
-            FIF.CODE,
-            self.tr("浏览器启动参数"),
-            "browser_launch_argument"
-        )
 
         self.ProgramGroup = SettingCardGroup(self.tr('程序设置'), self.scrollWidget)
         self.logLevelCard = ComboBoxSettingCardLog(
@@ -751,13 +751,13 @@ class SettingInterface(ScrollArea):
             "after_finish",
             FIF.POWER_BUTTON,
             self.tr('任务完成后'),
-            self.tr('其中“退出”指退出游戏，“循环”指7×24小时无人值守循环运行程序（仅限完整运行生效）'),
-            texts={'无': 'None', '退出': 'Exit', '循环': 'Loop', '关机': 'Shutdown', '睡眠': 'Sleep', '休眠': 'Hibernate', '重启': 'Restart', '注销': 'Logoff', '关闭显示器': 'TurnOffDisplay', '运行脚本': 'RunScript'}
+            self.tr('“退出”指退出游戏，不再建议使用循环模式，请改用日志界面的定时运行功能'),
+            texts={'无': 'None', '退出': 'Exit', '关机': 'Shutdown', '睡眠': 'Sleep', '休眠': 'Hibernate', '重启': 'Restart', '注销': 'Logoff', '关闭显示器': 'TurnOffDisplay', '运行脚本': 'RunScript', '循环': 'Loop'}
         )
         self.loopModeCard = ComboBoxSettingCard2(
             "loop_mode",
             FIF.COMMAND_PROMPT,
-            self.tr('循环模式（需要保留点击完整运行后弹出的窗口）'),
+            self.tr('循环模式（请改用日志界面的定时运行功能）'),
             '',
             texts={'定时任务': 'scheduled', '根据开拓力': 'power'}
         )
@@ -791,6 +791,13 @@ class SettingInterface(ScrollArea):
             self.tr('声音提示'),
             self.tr('任务完成后列车长唱歌提示帕！'),
             "play_audio"
+        )
+        self.closeWindowActionCard = ComboBoxSettingCard2(
+            "close_window_action",
+            FIF.CLOSE,
+            self.tr('关闭窗口时'),
+            self.tr('选择关闭窗口时的默认行为，也可以在关闭时由对话框询问'),
+            texts={'询问': 'ask', '最小化到托盘': 'minimize', '关闭程序': 'close'}
         )
 
         self.NotifyGroup = SettingCardGroup(self.tr("消息推送"), self.scrollWidget)
@@ -881,7 +888,7 @@ class SettingInterface(ScrollArea):
         self.hotkeyCard = SwitchSettingCardHotkey(
             FIF.SETTING,
             self.tr('修改按键'),
-            "配置秘技、地图、跃迁等按键设置"
+            "配置秘技、地图、跃迁、停止任务等按键设置"
         )
 
         self.AboutGroup = SettingCardGroup(self.tr('关于'), self.scrollWidget)
@@ -1069,8 +1076,13 @@ class SettingInterface(ScrollArea):
         ])
 
         self.CloudGameGroup.addSettingCard(self.cloudGameEnableCard)
-        self.CloudGameGroup.addSettingCard(self.browserDownloadUseMirrorCard)
         self.CloudGameGroup.addSettingCard(self.browserTypeCard)
+        self.browserTypeCard.addSettingCards([
+            self.browserDownloadUseMirrorCard,
+            self.browserPersistentCard,
+            self.browserScaleCard,
+            self.browserLaunchArgCard
+        ])
         self.CloudGameGroup.addSettingCard(self.cloudGameFullScreenCard)
         self.CloudGameGroup.addSettingCard(self.browserHeadlessCard)
         self.CloudGameGroup.addSettingCard(self.cloudGameMaxQueueTimeCard)
@@ -1078,9 +1090,9 @@ class SettingInterface(ScrollArea):
         # self.CloudGameGroup.addSettingCard(self.cloudGameSmoothFirstCard)
         # self.CloudGameGroup.addSettingCard(self.cloudGameShowStatusCard)
         # self.CloudGameGroup.addSettingCard(self.browserCookiesCard)
-        self.CloudGameGroup.addSettingCard(self.browserPersistentCard)
-        self.CloudGameGroup.addSettingCard(self.browserScaleCard)
-        self.CloudGameGroup.addSettingCard(self.browserLaunchArgCard)
+        # self.CloudGameGroup.addSettingCard(self.browserPersistentCard)
+        # self.CloudGameGroup.addSettingCard(self.browserScaleCard)
+        # self.CloudGameGroup.addSettingCard(self.browserLaunchArgCard)
 
         self.ProgramGroup.addSettingCard(self.logLevelCard)
         self.ProgramGroup.addSettingCard(self.gamePathCard)
@@ -1096,6 +1108,7 @@ class SettingInterface(ScrollArea):
             self.ScriptPathCard
         ])
         self.ProgramGroup.addSettingCard(self.playAudioCard)
+        self.ProgramGroup.addSettingCard(self.closeWindowActionCard)
 
         self.NotifyGroup.addSettingCard(self.testNotifyCard)
         self.testNotifyCard.addSettingCards([
@@ -1185,6 +1198,7 @@ class SettingInterface(ScrollArea):
         self.testNotifyCard.expandStateChanged.connect(self.__onExpandableCardStateChanged)
         self.instanceTypeCard.expandStateChanged.connect(self.__onExpandableCardStateChanged)
         self.echoofwarEnableCard.expandStateChanged.connect(self.__onExpandableCardStateChanged)
+        self.browserTypeCard.expandStateChanged.connect(self.__onExpandableCardStateChanged)
 
     def addSubInterface(self, widget: QLabel, objectName, text):
         def remove_spacing(layout):

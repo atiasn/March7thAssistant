@@ -37,7 +37,7 @@ game_path: C:\Program Files\Star Rail\Game\StarRail.exe # 游戏安装路径。
 # 云崩铁配置
 cloud_game_enable: False # 是否启动云游戏
 cloud_game_fullscreen_enable: True # 云崩铁是否全屏运行
-cloud_game_max_queue_time: 10 # 最大排队等待时间（分钟）
+cloud_game_max_queue_time: 60 # 最大排队等待时间（分钟）
 # cloud_game_video_quality: '0' # 云崩铁画质 '0'(超高清)，'1'（高清）, '2'（标清）, '3'（低清）
 # cloud_game_smooth_first_enable: False # 是否流畅优先
 # cloud_game_status_bar_enable: False # 是否显示网速
@@ -62,6 +62,8 @@ browser_mirror_urls:
   edgedriver: https://registry.npmmirror.com/-/binary/edgedriver/
 
 # 副本设置
+# 体力计划列表，每项包含副本类型、副本名称和剩余次数，例如：[["拟造花萼（金）", "回忆之蕾", 10], ["侵蚀隧洞", "睿治之径", 5]]
+power_plan: []
 instance_type: 拟造花萼（金） # 设置副本类型，可选值：拟造花萼（金）、拟造花萼（赤）、凝滞虚影、侵蚀隧洞、饰品提取。
 calyx_golden_preference: Jarilo-VI # 设置拟造花萼（金）偏好地区，可选值："雅利洛-VI"（Jarilo-VI）、仙舟「罗浮」（XianzhouLuofu）、匹诺康尼（Penacony）。
 instance_names:
@@ -98,10 +100,6 @@ merge_immersifier_limit: "12" # 沉浸器上限。
 # 开拓力使用设置
 use_reserved_trailblaze_power: False # 是否使用后备开拓力。true 使用，false 不使用。
 use_fuel: False # 是否使用燃料。true 使用，false 不使用。
-
-# 体力计划设置
-# 体力计划列表，每项包含副本类型、副本名称和剩余次数，例如：[["拟造花萼（金）", "回忆之蕾", 10], ["侵蚀隧洞", "睿治之径", 5]]
-power_plan: []
 
 # 历战余响设置
 echo_of_war_enable: false # 是否体力优先完成3次「历战余响」。true 开启，false 关闭。
@@ -309,8 +307,18 @@ hotkey_technique: e # 设置游戏内使用秘技的按键。
 hotkey_map: m # 设置打开地图的按键。
 hotkey_warp: f3 # 设置打开跃迁的按键。
 
+# 图形界面快捷键设置
+hotkey_stop_task: f10 # 设置停止任务的全局快捷键（支持后台）。
+
+# 定时运行设置
+scheduled_run_enable: false # 是否启用定时运行。true 启用，false 不启用。
+scheduled_run_time: "04:00" # 定时运行时间，格式为 HH:mm（24小时制）。
+
 # 是否在多显示器上进行截屏（若开启无法正确运行请关闭）
 all_screens: true
+
+# 关闭窗口行为设置
+close_window_action: ask # 关闭窗口时的行为，可选值："ask"（询问）, "minimize"（最小化到托盘）, "close"（关闭程序）
 
 # 更新配置
 redemption_code: [] # 兑换码列表
