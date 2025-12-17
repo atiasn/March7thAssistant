@@ -19,11 +19,12 @@ class Power:
         log.hr("开始清体力", 0)
 
         instance_type = cfg.instance_type
-        instance_name = cfg.instance_names[cfg.instance_type]
-        challenge_count = cfg.instance_names_challenge_count[cfg.instance_type]
+        instance_name = cfg.instance_names[instance_type]
+        challenge_count = cfg.instance_names_challenge_count[instance_type]
 
         if cfg.build_target_enable and (target := BuildTarget.get_target_instance()):
             instance_type, instance_name = target
+            challenge_count = cfg.instance_names_challenge_count[instance_type]
 
         if not Instance.validate_instance(instance_type, instance_name):
             log.hr("完成", 2)
@@ -212,10 +213,11 @@ class Power:
                 if result != "Failed":
                     executed_count += executable_count
                     count -= executable_count
+                    power -= instance_power_max * full_runs
                 else:
                     break
 
-            remain_runs = min((power % instance_power_max) // instance_power_min, count)
+            remain_runs = min(power // instance_power_min, count)
             if remain_runs >= 1 and count > 0:
                 result = Instance.run(instance_type, instance_name, remain_runs * instance_power_min, 1)
                 if result != "Failed":

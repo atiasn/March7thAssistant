@@ -9,6 +9,7 @@ from typing import Literal, Tuple, Optional
 import numpy as np
 import time
 import os
+import re
 
 
 class CurrencyWarsCharacter:
@@ -25,6 +26,7 @@ class CurrencyWars:
         self.peipei_count: int = 0  # 佩佩和叽米
         self.diamond_count: int = 0  # 财富宝钻
         self.current_level: int = 0  # 当前可部署角色等级
+        self.current_stage: str = "0-0"  # 当前关卡阶段
         self.result: Optional[bool] = None  # 对局结果
         self.need_exit: bool = False  # 是否需要退出
         self.forward_characters: list[CurrencyWarsCharacter] = []  # 存储前台角色
@@ -155,6 +157,13 @@ class CurrencyWars:
 
     def start_war(self, type: Literal["normal", "overclock"] = "normal") -> bool:
         log.info("开始「货币战争」")
+        screen.change_to("currency_wars_mode_select")
+
+        if auto.click_element("结束并结算", "text", crop=(1253 / 1920, 915 / 1080, 271 / 1920, 95 / 1080)):
+            log.warning("检测到未结算的对局，放弃并结算中")
+            if auto.click_element("放弃并结算", "text", max_retries=10, crop=(761 / 1920, 697 / 1080, 399 / 1920, 90 / 1080)):
+                self.loop()
+
         if type == "normal":
             log.info("选择标准博弈")
             screen.change_to("currency_wars_mode_select_normal")
@@ -196,10 +205,12 @@ class CurrencyWars:
         """
         货币战争任务主循环
         """
+        self.screenshot = None  # 任务截图
         self.result = None  # 重置结果
         self.peipei_count = 0  # 重置佩佩计数
         self.diamond_count = 0  # 重置财富宝钻计数
         self.current_level = 0  # 重置当前可部署角色等级
+        self.current_stage = "0-0"  # 重置当前关卡阶段
         self.need_exit = False  # 是否需要退出
         self.forward_characters = []  # 重置前台角色
         self.backward_characters = []  # 重置后台角色
@@ -259,6 +270,7 @@ class CurrencyWars:
                     self.give_up_and_settle()
                     self.need_exit = False
                     return
+                self.identify_current_stage()
                 self.collect_reward()
                 self.check_box()
                 self.check_character_status()
@@ -807,6 +819,18 @@ class CurrencyWars:
                 auto.click_element("确认选择", "text", crop=(1329.0 / 1920, 572.0 / 1080, 332.0 / 1920, 55.0 / 1080))
                 time.sleep(0.5)
 
+    def identify_current_stage(self):
+        """
+        识别当前关卡阶段
+        """
+        stage_crop = (414 / 1920, 56 / 1080, 117 / 1920, 44 / 1080)
+        stage_text = auto.get_single_line_text(crop=stage_crop)
+        if stage_text and re.match(r"^\d-\d$", stage_text):
+            log.hr(f"当前阶段：{stage_text}", 2)
+            self.current_stage = stage_text
+        else:
+            log.warning("未能识别当前货币战争阶段")
+
     def collect_reward(self):
         """
         收集奖励：模拟连续滑动，经过所有奖励图标
@@ -948,7 +972,7 @@ class CurrencyWars:
             except (ValueError, TypeError):
                 log.error(f"货币数量识别失败: {money}")
                 return 0
-        log.error("未识别到货币数量")
+        log.warning("未能识别到货币数量")
         return 0
 
     def check_character_limit(self):
