@@ -33,7 +33,7 @@
 ## 功能简介
 
 - **日常**：清体力、每日实训、领取奖励、委托、锄大地
-- **周常**：历战余响、模拟宇宙、忘却之庭
+- **周常**：历战余响、货币战争、模拟宇宙、忘却之庭
 - **抽卡记录导出**：支持 [UIGF](https://uigf.org/zh/standards/uigf.html)/[SRGF](https://uigf.org/zh/standards/srgf.html) 标准、**自动对话**
 - 每日实训等任务的完成情况支持**消息推送**
 - 任务刷新或体力恢复到指定值后**自动启动**
@@ -110,7 +110,9 @@ March7th Launcher.exe main -e
 
 ## 源码运行
 
-如果你是完全不懂的小白，请通过上面的方式下载安装，不用往下看了。
+如果你是完全不懂的小白，请通过上面的方式下载安装，可以不用往下看了。
+
+推荐使用 Python 3.12 或更高版本。
 
 ```cmd
 # Installation (using venv is recommended)
@@ -129,8 +131,6 @@ git submodule update --init --recursive
 <summary>开发相关</summary>
 
 获取 crop 参数表示的裁剪坐标可以通过小助手工具箱内的捕获截图功能
-
-python main.py 后面支持参数 fight/universe/forgottenhall 等
 
 </details>
 

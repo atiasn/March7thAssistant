@@ -87,7 +87,7 @@ class SettingInterface(ScrollArea):
         self.powerPlanCard = PushSettingCardPowerPlan(
             self.tr('配置'),
             FIF.CALENDAR,
-            self.tr("体力计划【测试版】"),
+            self.tr("体力计划"),
             "power_plan",
             "./assets/config/instance_names.json"
         )
@@ -347,6 +347,12 @@ class SettingInterface(ScrollArea):
             self.tr('无名勋礼'),
             None,
             "reward_srpass_enable"
+        )
+        self.achievementEnableCard = SwitchSettingCard1(
+            FIF.CERTIFICATE,
+            self.tr('成就'),
+            None,
+            "reward_achievement_enable"
         )
 
         # 兑换码奖励开关
@@ -1023,7 +1029,8 @@ class SettingInterface(ScrollArea):
             self.assistEnableCard,
             self.questEnableCard,
             self.srpassEnableCard,
-            self.redemptionEnableCard
+            self.redemptionEnableCard,
+            self.achievementEnableCard
         ])
 
         self.CurrencywarsGroup.addSettingCard(self.currencywarsEnableCard)

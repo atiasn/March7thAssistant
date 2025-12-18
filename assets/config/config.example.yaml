@@ -132,6 +132,7 @@ reward_assist_enable: true # 是否领取支援奖励。true 开启，false 关�
 reward_quest_enable: true # 是否领取每日实训奖励。true 开启，false 关闭。
 reward_srpass_enable: true # 是否领取无名勋礼奖励。true 开启，false 关闭。
 reward_redemption_code_enable: true # 是否领取兑换码奖励。true 开启，false 关闭。
+reward_achievement_enable: false # 是否领取成就奖励。true 开启，false 关闭。
 
 # 日常任务设置
 daily_enable: true # 是否启用日常任务。true 开启，false 关闭。
@@ -195,6 +196,10 @@ fight_timestamp: 0 # 上次运行锄大地的时间戳，用于记录和控制�
 fight_allow_map_buy: 不配置 # 购买代币与过期邮包
 fight_allow_snack_buy: 不配置 # 购买秘技零食并合成零食
 fight_main_map: "0" # 优先星球 {"空间站": "1", "雅利洛": "2", "仙舟": "3", "匹诺康尼": "4", "翁法罗斯": "5"}, "不配置": "0"
+
+# Genshin_StarRail_fps_unlocker 配置
+genshin_starRail_fps_unlocker_allow: false
+genshin_starRail_fps_unlocker_path: .\3rdparty\Genshin_StarRail_fps_unlocker
 
 # 忘却之庭配置
 forgottenhall_enable: false # 是否启用混沌回忆功能。true 开启，false 关闭。
