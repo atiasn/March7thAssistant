@@ -34,8 +34,6 @@ def generate_changelog(version: str, output_file: Path) -> None:
     # 生成最终内容
     final_output = f"""{log_content}
 
-首次安装请下载文件名内含有"full"的压缩包，否则会因为缺少组件无法使用！
-
 [已有 Mirror酱 CDK？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/download?rid=March7thAssistant&os=&arch=&channel=stable&source=m7a-release)"""
 
     output_file.write_text(final_output, encoding="utf-8")
@@ -73,7 +71,8 @@ def update_fps_unlocker() -> None:
 def download_browser() -> None:
     """下载集成浏览器"""
     log.info("[*] 下载集成浏览器...")
-    cfg.set_value("browser_download_use_mirror", False)
+    # 通过环境变量 MARCH7TH_BROWSER_DOWNLOAD_USE_MIRROR 控制是否使用镜像
+    # CI/CD 构建时设置为 false 使用官方源，Docker 构建时设置为 true 使用镜像
     cloud_game.download_intergrated_browser()
     log.info("[✓] 浏览器下载完成")
 

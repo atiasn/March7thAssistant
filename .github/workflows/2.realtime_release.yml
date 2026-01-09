@@ -19,6 +19,8 @@ jobs:
     env:
       PYTHONHASHSEED: 0
       SOURCE_DATE_EPOCH: 315532800
+      MARCH7TH_LOG_LEVEL: DEBUG
+      MARCH7TH_BROWSER_DOWNLOAD_USE_MIRROR: false
 
     steps:
       # 签出代码
@@ -46,7 +48,7 @@ jobs:
         if: steps.check_version.outputs.should_build == 'true'
         uses: actions/setup-python@v4
         with:
-          python-version: "3.12.10"
+          python-version: "3.13.11"
           cache: "pip"
 
       # 安装依赖
@@ -54,7 +56,7 @@ jobs:
         if: steps.check_version.outputs.should_build == 'true'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller==6.14.1
+          pip install -r requirements.txt pyinstaller==6.17.0
           python build.py --task ocr
 
       # 生成程序
