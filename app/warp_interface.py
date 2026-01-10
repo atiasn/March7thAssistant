@@ -1,6 +1,6 @@
 # coding:utf-8
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog, QScroller, QScrollerProperties
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog, QScroller, QScrollerProperties
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import qconfig, ScrollArea, PrimaryPushButton, InfoBar, InfoBarPosition, PushButton, MessageBox
 from .common.style_sheet import StyleSheet
@@ -68,7 +68,7 @@ class WarpInterface(ScrollArea):
         self.titleLabel.setObjectName('warpLabel')
         StyleSheet.WARP_INTERFACE.apply(self)
 
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setWidget(self.view)
         self.setWidgetResizable(True)
         self.contentLabel.setWordWrap(True)
@@ -80,7 +80,7 @@ class WarpInterface(ScrollArea):
 
         # self.vBoxLayout.setSpacing(28)
         self.vBoxLayout.setContentsMargins(36, 0, 36, 0)
-        self.vBoxLayout.addWidget(self.contentLabel, 0, Qt.AlignTop)
+        self.vBoxLayout.addWidget(self.contentLabel, 0, Qt.AlignmentFlag.AlignTop)
 
         QScroller.grabGesture(self.viewport(), QScroller.ScrollerGestureType.LeftMouseButtonGesture)
         scroller = QScroller.scroller(self.viewport())
@@ -136,7 +136,7 @@ class WarpInterface(ScrollArea):
             InfoBar.success(
                 title='导入成功(＾∀＾●)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -146,7 +146,7 @@ class WarpInterface(ScrollArea):
             InfoBar.warning(
                 title='导入失败(╥╯﹏╰╥)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -160,12 +160,20 @@ class WarpInterface(ScrollArea):
             warp = WarpExport(config)
             default_name = f"UIGF_{warp.get_uid()}"
 
-            path, _ = QFileDialog.getSaveFileName(
-                self,
-                "导出抽卡记录",
-                f"{default_name}",
-                "UIGF 格式 (*.json);;SRGF 格式 (*.srgf.json)"
-            )
+            if sys.platform == 'win32':
+                path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "导出抽卡记录",
+                    f"{default_name}",
+                    "UIGF 格式 (*.json);;SRGF 格式 (*.srgf.json)"
+                )
+            else:
+                path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "导出抽卡记录",
+                    f"{default_name}.json",
+                    "UIGF 格式 (*.json)"
+                )
             if not path:
                 return
 
@@ -180,12 +188,12 @@ class WarpInterface(ScrollArea):
             with open(path, 'w', encoding='utf-8') as file:
                 json.dump(data_to_save, file, ensure_ascii=False, indent=4)
 
-            os.startfile(os.path.dirname(path))
+            self._start_file(os.path.dirname(path))
 
             InfoBar.success(
                 title='导出成功(＾∀＾●)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -196,7 +204,7 @@ class WarpInterface(ScrollArea):
             InfoBar.warning(
                 title='导出失败(╥╯﹏╰╥)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -282,12 +290,12 @@ class WarpInterface(ScrollArea):
                 ws.column_dimensions[col_letter].width = max_width + 2
 
             wb.save(path)
-            os.startfile(os.path.dirname(path))
+            self._start_file(os.path.dirname(path))
 
             InfoBar.success(
                 title='导出成功(＾∀＾●)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -298,7 +306,7 @@ class WarpInterface(ScrollArea):
             InfoBar.warning(
                 title='导出失败(╥╯﹏╰╥)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -311,7 +319,7 @@ class WarpInterface(ScrollArea):
             InfoBar.success(
                 title='复制成功(＾∀＾●)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -321,7 +329,7 @@ class WarpInterface(ScrollArea):
             InfoBar.warning(
                 title='复制失败(╥╯﹏╰╥)',
                 content="",
-                orient=Qt.Horizontal,
+                orient=Qt.Orientation.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=1000,
@@ -343,7 +351,7 @@ class WarpInterface(ScrollArea):
                 InfoBar.success(
                     title='清空完成(＾∀＾●)',
                     content="",
-                    orient=Qt.Horizontal,
+                    orient=Qt.Orientation.Horizontal,
                     isClosable=True,
                     position=InfoBarPosition.TOP,
                     duration=1000,
@@ -354,12 +362,20 @@ class WarpInterface(ScrollArea):
                 InfoBar.warning(
                     title='清空失败(╥╯﹏╰╥)',
                     content="",
-                    orient=Qt.Horizontal,
+                    orient=Qt.Orientation.Horizontal,
                     isClosable=True,
                     position=InfoBarPosition.TOP,
                     duration=1000,
                     parent=self
                 )
+
+    def _start_file(self, path):
+        if sys.platform == 'win32':
+            os.startfile(path)
+        elif sys.platform == 'darwin':
+            os.system(f'open "{path}"')
+        else:
+            os.system(f'xdg-open "{path}"')
 
     def setContent(self):
         try:

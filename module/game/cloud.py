@@ -5,7 +5,7 @@ import psutil
 import platform
 import sys
 import base64
-from time import sleep
+import time
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, SessionNotCreatedException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -408,11 +408,16 @@ class CloudGameController(GameControllerBase):
             return
 
         game_selector = ".game-player"
+        guide_close_selector = "div.guide-close-btn__x"
         enter_button_selector = "div.wel-card__content--start"
         try:
             if self.driver.find_elements(By.CSS_SELECTOR, game_selector):
                 self.log_info("已在游戏中")
                 return
+            guide_close_btn = self.driver.find_elements(By.CSS_SELECTOR, guide_close_selector)
+            if guide_close_btn:
+                # 先关闭 “保存网页地址，下次可一键游玩” 引导弹窗，避免遮挡后续游戏画面
+                self.driver.execute_script("arguments[0].click();", guide_close_btn[0])
             enter_button = WebDriverWait(self.driver, timeout).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, enter_button_selector))
             )
@@ -450,7 +455,7 @@ class CloudGameController(GameControllerBase):
                         document.getElementsByClassName("coin-prior-choose-item-include-info")[1].click();
                     } catch(e) {}
                 """)
-                sleep(2)
+                time.sleep(2)
                 status = WebDriverWait(self.driver, 10).until(
                     lambda d: d.execute_script("""
                         if (document.querySelector(arguments[0])) return "game_running";
@@ -465,15 +470,37 @@ class CloudGameController(GameControllerBase):
                 return True
             elif status == "in_queue":
                 self.log_info("正在排队...")
-                try:
-                    WebDriverWait(self.driver, timeout).until(
-                        EC.invisibility_of_element_located((By.CSS_SELECTOR, in_queue_selector))
-                    )
-                    self.log_info("排队成功，正在进入游戏")
-                    return True
-                except TimeoutException:
-                    self.log_error("排队超时")
-                    return False
+                last_wait_time = None
+                poll_interval = 5  # 每5秒检测一次
+                start_time = time.monotonic()
+                while time.monotonic() - start_time < timeout:
+                    # 检查是否已退出排队
+                    if not self.driver.find_elements(By.CSS_SELECTOR, in_queue_selector):
+                        self.log_info("排队成功，正在进入游戏")
+                        return True
+                    # 检测预计等待时间
+                    wait_time = self.driver.execute_script("""
+                        // 方式1: "预估排队时间30分钟以上，建议开拓者错峰进行游戏~"
+                        var timeHide = document.querySelector('.time-hide__text');
+                        if (timeHide && timeHide.textContent) {
+                            return timeHide.textContent.trim();
+                        }
+                        // 方式2: "预计等待时间 10~20 分钟"
+                        var singleRow = document.querySelector('.single-row');
+                        if (singleRow) {
+                            var valEl = singleRow.querySelector('.single-row__val');
+                            if (valEl && valEl.textContent) {
+                                return '预计等待时间: ' + valEl.textContent.replace(/\\s+/g, '').trim();
+                            }
+                        }
+                        return null;
+                    """)
+                    if wait_time and wait_time != last_wait_time:
+                        self.log_info(f"当前状态: {wait_time}")
+                        last_wait_time = wait_time
+                    time.sleep(poll_interval)
+                self.log_error("排队超时")
+                return False
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -613,7 +640,7 @@ class CloudGameController(GameControllerBase):
         )
         try:
             qr_login_button.click()
-            sleep(0.5)
+            time.sleep(0.5)
         except Exception as click_err:
             self.log_warning(f"点击二维码登录按钮失败: {click_err}")
 
@@ -623,7 +650,7 @@ class CloudGameController(GameControllerBase):
             EC.presence_of_element_located((By.CSS_SELECTOR, "img.qr-loaded"))
         )
         self.log_debug("二维码已加载")
-        sleep(1)
+        time.sleep(1)
         return qr_img
 
     def _save_qr_img(self, qr_img) -> str:
@@ -633,13 +660,12 @@ class CloudGameController(GameControllerBase):
         os.makedirs(logs_dir, exist_ok=True)
         qr_filename = os.path.join(logs_dir, "qrcode_login.png")
         qr_img.screenshot(qr_filename)
-        self.log_debug(f"二维码已保存到: {os.path.abspath(qr_filename)}")
         self.log_info("=" * 60)
         self.log_info("请使用手机米游社 APP 扫描二维码登录")
         self.log_info(f"二维码图片位置: {os.path.abspath(qr_filename)}")
         return qr_filename
 
-    def _decode_qr_from_element(self, qr_img, qr_filename: str, prefix: str = "二维码") -> None:
+    def _decode_qr_from_element(self, qr_img, qr_filename: str) -> None:
         try:
             import base64
             import numpy as np
@@ -665,7 +691,7 @@ class CloudGameController(GameControllerBase):
                             data = results[0].data.decode("utf-8", errors="ignore")
                         except Exception:
                             data = results[0].data.decode(errors="ignore")
-                        self.log_info(f"{prefix}内容：")
+                        self.log_info(f"二维码内容：")
                         self.log_info(data)
                         self.log_info("提示：你也可以将该内容自行生成二维码后再扫码登录。")
                     else:
@@ -697,7 +723,7 @@ class CloudGameController(GameControllerBase):
                 try:
                     qr_wrap = self.driver.find_element(By.CSS_SELECTOR, "div.qr-wrap")
                     qr_wrap.click()
-                    sleep(1)
+                    time.sleep(1)
 
                     WebDriverWait(self.driver, 10).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "img.qr-loaded"))
@@ -707,15 +733,19 @@ class CloudGameController(GameControllerBase):
                     try:
                         qr_img = self.driver.find_element(By.CSS_SELECTOR, "img.qr-loaded")
                         qr_img.screenshot(qr_filename)
-                        self.log_info("新二维码已保存到: %s", os.path.abspath(qr_filename))
-                        self._decode_qr_from_element(qr_img, qr_filename, prefix="新二维码")
+                        self.log_info("=" * 60)
+                        self.log_info("请使用手机米游社 APP 扫描二维码登录")
+                        self.log_info(f"二维码图片位置: {os.path.abspath(qr_filename)}")
+                        self._decode_qr_from_element(qr_img, qr_filename)
+                        self.log_info("=" * 60)
+                        self.log_info("等待扫码（二维码过期将自动刷新）...")
                     except Exception as refresh_err:
                         self.log_warning(f"保存刷新后的二维码失败: {refresh_err}")
                 except Exception as refresh_err:
                     self.log_error(f"刷新二维码失败: {refresh_err}")
                     break
 
-            sleep(check_interval)
+            time.sleep(check_interval)
 
     def _run_qr_login_flow(self) -> None:
         self.log_info("正在切换到二维码登录...")
@@ -730,7 +760,7 @@ class CloudGameController(GameControllerBase):
                 qr_filename = os.path.join("logs", "qrcode_login.png")
 
             # 初次解码
-            self._decode_qr_from_element(qr_img, qr_filename, prefix="二维码")
+            self._decode_qr_from_element(qr_img, qr_filename)
             self.log_info("=" * 60)
             self.log_info("等待扫码（二维码过期将自动刷新）...")
             self._wait_scan_success_with_refresh(qr_filename)
@@ -751,10 +781,12 @@ class CloudGameController(GameControllerBase):
             except Exception as switch_err:
                 self.log_warning(f"切回主文档失败: {switch_err}")
 
-    def start_game_process(self) -> bool:
+    def start_game_process(self, headless=None) -> bool:
         """启动浏览器进程"""
         try:
-            self._connect_or_create_browser(headless=self.cfg.browser_headless_enable)
+            if headless is None:
+                headless = self.cfg.browser_headless_enable
+            self._connect_or_create_browser(headless=headless)
             self._confirm_viewport_resolution()
             return True
         except Exception as e:
@@ -785,7 +817,7 @@ class CloudGameController(GameControllerBase):
 
                 # 循环检测用户是否登录
                 while not self._check_login():
-                    sleep(2)
+                    time.sleep(2)
 
                 self.log_info("检测到登录成功")
 
