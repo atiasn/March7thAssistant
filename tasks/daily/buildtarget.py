@@ -25,7 +25,14 @@ class BuildTarget:
         if not BuildTarget._initialized:
             BuildTarget.init_build_targets()
 
-        require_ornament = datetime.date.today().weekday() >= (7 - cfg.build_target_ornament_weekly_count)
+        require_ornament = False
+        if BuildTarget._target_instances:
+            only_erosion_and_ornament = all(
+                ("侵蚀隧洞" in instance_type) or ("饰品提取" in instance_type)
+                for instance_type, _ in BuildTarget._target_instances
+            )
+            if only_erosion_and_ornament:
+                require_ornament = datetime.date.today().weekday() >= (7 - cfg.build_target_ornament_weekly_count)
 
         for instance_type, instance_name in BuildTarget._target_instances:
             if "历战余响" in instance_type:
@@ -209,7 +216,8 @@ class BuildTarget:
 
     @staticmethod
     def _get_instance_info() -> tuple[str, str] | None:
-        if not auto.find_element(["挑战", "开始挑战"], "text", max_retries=10, crop=(1520.0 / 1920, 933.0 / 1080, 390.0 / 1920, 111.0 / 1080)):
+        # 机械硬盘加载慢，可能需要较长时间等待挑战按钮出现
+        if not auto.find_element(["挑战", "开始挑战"], "text", max_retries=60, crop=(1520.0 / 1920, 933.0 / 1080, 390.0 / 1920, 111.0 / 1080)):
             log.error("未能检测到挑战按钮")
             return None
 
@@ -235,7 +243,15 @@ class BuildTarget:
 
     @staticmethod
     def _parse_ornament_instance_info() -> str | None:
-        return auto.get_single_line_text(max_retries=5, retry_delay=1.0, crop=(584.0 / 1920, 112.0 / 1080, 614.0 / 1920, 52.0 / 1080))
+        name = auto.get_single_line_text(max_retries=5, retry_delay=1.0, crop=(584.0 / 1920, 112.0 / 1080, 614.0 / 1920, 52.0 / 1080))
+        if not name:
+            return None
+
+        # 移除“难度”及其之后的内容（例如“难度V”或“难度VI”），并去掉首尾空白
+        parsed = re.sub(r'难度.*$', '', name).strip()
+
+        # 如果解析后为空字符串，则返回原始去空白的名称
+        return parsed or name.strip()
 
     @staticmethod
     def _parse_calyx_instance_info() -> str | None:
