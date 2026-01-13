@@ -1,10 +1,9 @@
-from module.logger import log
-from module.config import cfg
-from module.ocr import ocr
-from module.game import cloud_game
-from tasks.weekly.universe import Universe
-from tasks.daily.fight import Fight
-from tasks.base.genshin_starRail_fps_unlocker import Genshin_StarRail_fps_unlocker
+try:
+    from module.logger import log
+except ImportError:
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+    log = logging.getLogger("build")
 import re
 import sys
 import argparse
@@ -43,6 +42,7 @@ def generate_changelog(version: str, output_file: Path) -> None:
 def init_ocr() -> None:
     """初始化OCR"""
     log.info("[*] 初始化OCR...")
+    from module.ocr import ocr
     ocr.instance_ocr(log_level="info")
     log.info("[✓] OCR初始化完成")
 
@@ -50,6 +50,7 @@ def init_ocr() -> None:
 def update_universe() -> None:
     """更新Universe"""
     log.info("[*] 更新Universe...")
+    from tasks.weekly.universe import Universe
     Universe.update()
     log.info("[✓] Universe更新完成")
 
@@ -57,6 +58,7 @@ def update_universe() -> None:
 def update_fight() -> None:
     """更新Fight"""
     log.info("[*] 更新Fight...")
+    from tasks.daily.fight import Fight
     Fight.update()
     log.info("[✓] Fight更新完成")
 
@@ -64,6 +66,7 @@ def update_fight() -> None:
 def update_fps_unlocker() -> None:
     """更新FPS解锁器"""
     log.info("[*] 更新Genshin StarRail FPS解锁器...")
+    from tasks.base.genshin_starRail_fps_unlocker import Genshin_StarRail_fps_unlocker
     Genshin_StarRail_fps_unlocker.update()
     log.info("[✓] FPS解锁器更新完成")
 
@@ -72,8 +75,34 @@ def download_browser() -> None:
     """下载集成浏览器"""
     log.info("[*] 下载集成浏览器...")
     # 通过环境变量 MARCH7TH_BROWSER_DOWNLOAD_USE_MIRROR 控制是否使用镜像
-    # CI/CD 构建时设置为 false 使用官方源，Docker 构建时设置为 true 使用镜像
-    cloud_game.download_intergrated_browser()
+    try:
+        from module.game import cloud_game
+        cloud_game.download_intergrated_browser()
+    except ImportError:
+        import sys
+        if sys.platform == "linux":
+            import os
+            from selenium.webdriver.common.selenium_manager import SeleniumManager
+            browser_path = "./3rdparty/WebBrowser/chrome/linux64/140.0.7339.207/chrome"
+            driver_path = "./3rdparty/WebBrowser/chromedriver/linux64/140.0.7339.207/chromedriver"
+            if not os.path.exists(browser_path) or not os.path.exists(driver_path):
+                args = ["--browser", "chrome",
+                        "--cache-path", "./3rdparty/WebBrowser",
+                        "--browser-version", "140.0.7339.207",
+                        "--force-browser-download",
+                        "--skip-driver-in-path",
+                        "--skip-browser-in-path"]
+                if os.environ.get("MARCH7TH_BROWSER_DOWNLOAD_USE_MIRROR", "false").lower() in ("true", "1"):
+                    mirror_url = "https://registry.npmmirror.com/-/binary/chrome-for-testing/"
+                    log.info(f"正在使用镜像源，浏览器镜像源：{mirror_url}，驱动镜像源：{mirror_url}")
+                    args.extend([
+                        "--browser-mirror-url", mirror_url,
+                        "--driver-mirror-url", mirror_url,
+                    ])
+                log.info("正在下载浏览器和驱动...")
+                SeleniumManager().binary_paths(args)
+        else:
+            raise
     log.info("[✓] 浏览器下载完成")
 
 

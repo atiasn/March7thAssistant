@@ -110,11 +110,19 @@ class Screen(metaclass=SingletonMeta):
             auto.take_screenshot()
             self._reset_screen_state()
 
-            threads = [threading.Thread(target=find_screen, args=(name, screen)) for name, screen in self.screen_map.items()]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join()
+            import psutil
+            mem = psutil.virtual_memory()
+            if mem.available > 2 * 1024**3:
+                threads = [threading.Thread(target=find_screen, args=(name, screen)) for name, screen in self.screen_map.items()]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+            else:
+                for name, screen in self.screen_map.items():
+                    find_screen(name, screen)
+                    if self.current_screen:
+                        break
 
             if self.current_screen:
                 return True
@@ -216,8 +224,9 @@ class Screen(metaclass=SingletonMeta):
         self.logger.error(log_message)
         # self.logger.error("如果游戏是从本地启动：")
         if not cfg.cloud_game_enable:
-            self.logger.error("请确保游戏画面干净，关闭帧率监控HUD、微星小飞机、游戏加加等影响游戏画面的软件")
-            self.logger.error("如果是多显示器，游戏需要放在主显示器运行，且不支持HDR或N卡游戏滤镜等")
+            self.logger.error("请关闭帧率监控HUD、微星小飞机、游戏加加、HDR或N卡游戏滤镜等等任何可能影响游戏画面的软件")
+            self.logger.error("如果是多显示器，可尝试开关选项 设置-杂项-在多显示器上进行截屏")
+            self.logger.error("你还可以通过 工具箱-游戏截图 判断当前游戏画面是否被正确获取")
         # self.logger.error("如果是云·星穹铁道：")
         else:
             self.logger.error("使用云·星穹铁道请确保网络正常，浏览器能正常加载游戏画面")

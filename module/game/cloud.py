@@ -5,6 +5,7 @@ import psutil
 import platform
 import sys
 import base64
+import requests
 import time
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, SessionNotCreatedException
@@ -12,6 +13,8 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
+from selenium.webdriver.chromium.options import ChromiumOptions
+from selenium.webdriver.chromium.service import ChromiumService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -22,7 +25,9 @@ from selenium.common.exceptions import WebDriverException
 from module.config import Config
 from module.game.base import GameControllerBase
 from module.logger import Logger
-from utils.encryption import wdp_encrypt, wdp_decrypt
+# from utils.encryption import wdp_encrypt, wdp_decrypt
+
+from utils.console import is_docker_started
 
 
 class CloudGameController(GameControllerBase):
@@ -145,6 +150,14 @@ class CloudGameController(GameControllerBase):
 
     def _prepare_browser_and_driver(self, browser_type: str, integrated: bool) -> tuple[str, str]:
         self.user_profile_path = os.path.join(self.BROWSER_INSTALL_PATH, "UserProfile", self.cfg.browser_type.capitalize())
+        # 判断环境变量 MARCH7TH_BROWSER_PATH 和 MARCH7TH_DRIVER_PATH，同时存在时优先使用
+        env_browser_path = os.environ.get("MARCH7TH_BROWSER_PATH")
+        env_driver_path = os.environ.get("MARCH7TH_DRIVER_PATH")
+        if env_browser_path and env_driver_path:
+            self.log_debug("检测到环境变量 MARCH7TH_BROWSER_PATH 和 MARCH7TH_DRIVER_PATH，优先使用指定路径")
+            self.log_debug(f"browser_path = {env_browser_path}")
+            self.log_debug(f"driver_path = {env_driver_path}")
+            return env_browser_path, env_driver_path
 
         # 输出平台信息
         platform_dir = self._get_platform_dir()
@@ -217,8 +230,10 @@ class CloudGameController(GameControllerBase):
             args += [
                 "--headless=new",  # 无窗口模式
                 "--mute-audio",    # 后台静音
-                "--no-sandbox",
             ]
+            if is_docker_started():
+                # Docker 环境下需要额外参数
+                args.append("--no-sandbox")
         if self.cfg.cloud_game_fullscreen_enable and not headless:
             args.append("--start-fullscreen")  # 全屏启动
         args.extend(self.cfg.browser_launch_argument)  # 用户自定义参数
@@ -226,7 +241,7 @@ class CloudGameController(GameControllerBase):
 
     def _connect_or_create_browser(self, headless=False) -> None:
         """尝试连接到现有的（由小助手启动的）浏览器，如果没有，那就创建一个"""
-        browser_type = "chrome" if self.cfg.browser_type in ["integrated", "chrome"] else "edge"
+        browser_type = "chrome" if self.cfg.browser_type in ["integrated", "chrome"] else "edge" if self.cfg.browser_type == "edge" else "chromium"
         integrated = self.cfg.browser_type == "integrated"
         first_run = False
         browser_path, driver_path = self._prepare_browser_and_driver(browser_type, integrated)
@@ -238,10 +253,14 @@ class CloudGameController(GameControllerBase):
             options = ChromeOptions()
             service = ChromeService(executable_path=driver_path, log_path=os.devnull)
             webdriver_type = webdriver.Chrome
-        else:  # edge
+        elif browser_type == "edge":
             options = EdgeOptions()
             service = EdgeService(executable_path=driver_path, log_path=os.devnull)
             webdriver_type = webdriver.Edge
+        else:  # chromium
+            options = ChromiumOptions()
+            service = ChromiumService(executable_path=driver_path, log_path=os.devnull)
+            webdriver_type = webdriver.Chrome
         # 记录 driver 可执行路径和 service，以便后续清理 chromedriver 进程
         self.driver_path = driver_path
         self._webdriver_service = service
@@ -270,12 +289,36 @@ class CloudGameController(GameControllerBase):
         for arg in self._get_browser_arguments(headless=headless):
             options.add_argument(arg)
 
+        # 清理失效的断链 (Broken Symlinks) 防止浏览器无法启动
+        if is_docker_started():
+            singleton_files = ["SingletonCookie", "SingletonLock", "SingletonSocket"]
+            for filename in singleton_files:
+                file_path = os.path.join(self.user_profile_path, filename)
+                try:
+                    # 逻辑：是一个链接，但指向的目标不存在
+                    if os.path.islink(file_path) and not os.path.exists(file_path):
+                        os.remove(file_path)
+                        self.log_debug(f"已清理断开的软链接: {file_path}")
+                except Exception as e:
+                    self.log_warning(f"处理残留链接失败: {file_path}, 错误: {e}")
+
         try:
             self.log_debug("启动浏览器中...")
             self.driver = webdriver_type(service=service, options=options)
             self.log_debug("浏览器启动成功")
         except SessionNotCreatedException as e:
             self.log_error(f"浏览器启动失败: {e}")
+            # 清理残留文件，防止浏览器无法启动
+            if is_docker_started():
+                singleton_files = ["SingletonCookie", "SingletonLock", "SingletonSocket"]
+                for filename in singleton_files:
+                    file_path = os.path.join(self.user_profile_path, filename)
+                    try:
+                        if os.path.lexists(file_path):
+                            os.remove(file_path)
+                            self.log_debug(f"已删除残留文件: {file_path}")
+                    except Exception as e:
+                        self.log_warning(f"删除残留文件失败: {file_path}, 错误: {e}")
             self.log_error("如果设置了浏览器启动参数，请去掉所有浏览器启动参数后重试")
             self.log_error("如果仍然存在问题，请更换浏览器重试")
             raise Exception("浏览器启动失败")
@@ -653,13 +696,43 @@ class CloudGameController(GameControllerBase):
         time.sleep(1)
         return qr_img
 
+    def _save_qr_from_src(self, qr_img, qr_filename) -> None:
+        """从元素的 src 保存二维码图片（支持 data URI 与 HTTP URL）。"""
+        try:
+            qr_src = qr_img.get_attribute("src")
+            # data URI 形式
+            if qr_src and qr_src.startswith("data:image"):
+                b64_data = qr_src.split(",", 1)[1]
+                img_bytes = base64.b64decode(b64_data)
+                with open(qr_filename, "wb") as f:
+                    f.write(img_bytes)
+                return
+
+            # 网络图片，使用 requests 下载
+            if qr_src and qr_src.startswith("http"):
+                resp = requests.get(qr_src, timeout=10)
+                resp.raise_for_status()
+                with open(qr_filename, "wb") as f:
+                    f.write(resp.content)
+                return
+
+            # 其他情况回退为元素截图
+            qr_img.screenshot(qr_filename)
+        except Exception as e:
+            self.log_warning(f"保存二维码失败，尝试截图保存: {e}")
+            try:
+                qr_img.screenshot(qr_filename)
+            except Exception as err:
+                self.log_error(f"保存二维码失败: {err}")
+                raise
+
     def _save_qr_img(self, qr_img) -> str:
         import os
         # 将二维码保存到 logs 目录，方便 Docker 挂载访问
         logs_dir = "logs"
         os.makedirs(logs_dir, exist_ok=True)
         qr_filename = os.path.join(logs_dir, "qrcode_login.png")
-        qr_img.screenshot(qr_filename)
+        self._save_qr_from_src(qr_img, qr_filename)
         self.log_info("=" * 60)
         self.log_info("请使用手机米游社 APP 扫描二维码登录")
         self.log_info(f"二维码图片位置: {os.path.abspath(qr_filename)}")
@@ -667,7 +740,6 @@ class CloudGameController(GameControllerBase):
 
     def _decode_qr_from_element(self, qr_img, qr_filename: str) -> None:
         try:
-            import base64
             import numpy as np
             import cv2
             from pyzbar.pyzbar import decode as zbar_decode
@@ -732,7 +804,7 @@ class CloudGameController(GameControllerBase):
 
                     try:
                         qr_img = self.driver.find_element(By.CSS_SELECTOR, "img.qr-loaded")
-                        qr_img.screenshot(qr_filename)
+                        self._save_qr_from_src(qr_img, qr_filename)
                         self.log_info("=" * 60)
                         self.log_info("请使用手机米游社 APP 扫描二维码登录")
                         self.log_info(f"二维码图片位置: {os.path.abspath(qr_filename)}")
