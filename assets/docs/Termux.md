@@ -115,7 +115,7 @@ proot-distro reset march7thassistant
 
 ### 启动非完整运行任务
 
-默认情况下运行的是**完整运行**，如果只想执行某个子任务，编辑 `start-m7a.sh`，在末尾的 `--env` 行后添加 `-- python main.py <任务名>`：
+默认情况下运行的是**完整运行**，如果只想执行某个子任务，编辑 `start-m7a.sh`，取消注释末尾的 `-- python main.py daily` 并修改为所需任务名，同时在上一行 `MARCH7TH_LOG_LEVEL=DEBUG` 末尾添加 `\`：
 
 ```bash
   --env MARCH7TH_LOG_LEVEL=DEBUG \
