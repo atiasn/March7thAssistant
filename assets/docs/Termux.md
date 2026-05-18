@@ -30,7 +30,116 @@
 
 > **注意**：请从 GitHub Releases 下载 APK 手动安装，**不要**从 Google Play 安装旧版本。
 
-## 2. 配置 Termux
+---
+
+## 方式一：proot-distro v5.0 镜像部署（推荐）
+
+proot-distro v5.0 支持直接拉取 Docker 镜像，无需手动安装依赖，一条命令即可部署。
+
+> **注意**：需要 proot-distro **5.0+** 版本。安装后可通过 `proot-distro --help` 检查版本。
+
+### 2. 安装 proot-distro 并配置 Termux
+
+首先切换到国内镜像源以加速后续下载：
+
+```bash
+termux-change-repo
+```
+
+在弹出的界面中选择 **Mirror group**，然后选择 **Mirrors in Chinese Mainland**（国内镜像）。
+
+```bash
+pkg install proot-distro
+```
+
+建议获取唤醒锁，防止安装过程中设备休眠导致 Termux 被系统杀掉：
+
+```bash
+termux-wake-lock
+```
+
+### 3. 创建项目目录并下载配置文件
+
+```bash
+mkdir -p march7thassistant/logs march7thassistant/3rdparty/WebBrowser/UserProfile
+cd march7thassistant
+curl -o config.yaml https://m7a.top/assets/config/config.example.yaml
+```
+
+### 4. 下载启动脚本
+
+```bash
+curl -o start-m7a.sh https://m7a.top/assets/scripts/start-m7a.sh
+chmod +x start-m7a.sh
+```
+
+### 5. 首次启动
+
+首次需要拉取镜像（可能较慢）：
+
+```bash
+proot-distro install ghcr.io/moesnow/march7thassistant:latest
+```
+
+> **中国大陆用户**：如果下载速度较慢，可以使用南京大学镜像源：
+>
+> ```bash
+> proot-distro install ghcr.nju.edu.cn/moesnow/march7thassistant:latest
+> ```
+
+之后启动程序：
+
+```bash
+./start-m7a.sh
+```
+
+首次运行时，程序会自动进入**二维码登录**模式。
+
+二维码图片会保存在 `logs/qrcode_login.png`，使用手机**米游社 APP** 扫描完成登录。
+
+也可以查看终端输出中的二维码内容，使用在线工具（如 [草料二维码](https://cli.im/)）将网址生成二维码后扫码登录。
+
+如果一切顺利，你应该能够在安卓设备上成功运行 March7th Assistant 了！
+
+![Termux 运行成功示例](termux-success.jpg)
+
+### 如何更新
+
+```bash
+proot-distro reset march7thassistant
+```
+
+### 循环运行
+
+默认情况下，启动脚本在任务完成后会自动退出。如果需要循环运行（例如每天定时执行），编辑 `start-m7a.sh`，将 `MARCH7TH_AFTER_FINISH=Exit` 改为 `MARCH7TH_AFTER_FINISH=Loop`。
+
+### 启动非完整运行任务
+
+默认情况下运行的是**完整运行**，如果只想执行某个子任务，编辑 `start-m7a.sh`，在末尾的 `--env` 行后添加 `-- python main.py <任务名>`：
+
+```bash
+  --env MARCH7TH_LOG_LEVEL=DEBUG \
+  -- python main.py daily
+```
+
+常见示例：
+
+| 任务名 | 说明 |
+|------|------|
+| `daily` | 仅执行每日实训 |
+| `power` | 仅执行清体力 |
+| `currencywars` | 仅执行货币战争 |
+| `divergent` | 仅执行差分宇宙 |
+| `notify` | 测试消息推送 |
+| `-l` | 查看完整任务列表 |
+
+---
+
+## 方式二：传统手动安装
+
+如果你使用的 proot-distro 版本低于 5.0，或希望更灵活地控制环境，可以使用以下手动安装方式。
+
+### 2. 配置 Termux
 
 安装完成后打开 Termux，首先切换到国内镜像源以加速后续下载：
 
@@ -46,7 +155,7 @@ termux-change-repo
 termux-wake-lock
 ```
 
-## 3. 安装 proot-distro 并部署 Debian
+### 3. 安装 proot-distro 并部署 Debian
 
 ```bash
 pkg install proot-distro
@@ -55,7 +164,7 @@ proot-distro install debian
 
 > **注意**：`proot-distro install debian` 没有使用国内镜像，如果下载速度很慢或连接失败，可以尝试通过代理下载，或自行搜索 proot-distro 的镜像源配置方法。
 
-## 4. 进入 Debian 容器
+### 4. 进入 Debian 容器
 
 ```bash
 proot-distro login debian
@@ -64,8 +173,14 @@ proot-distro login debian
 进入后，配置国内镜像源（这里使用阿里云为例）：
 
 ```bash
+# Debian 11 及更早版本
 sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
+
+# Debian 12 及更新版本
+sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 ```
+
+> 不确定用哪个？可以两个都执行，不存在的文件会被自动跳过。
 
 更新系统并配置时区：
 
@@ -74,12 +189,18 @@ apt update && apt upgrade -y
 apt install -y tzdata && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 ```
 
-## 5. 安装依赖
+### 5. 安装依赖
 
 安装 Python、Chromium 浏览器及驱动等必要软件包：
 
 ```bash
 apt install -y python3 python3-pip pipx git chromium chromium-driver
+```
+
+配置 pip 国内镜像源：
+
+```bash
+python3 -m pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
 ```
 
 安装 uv（Python 包管理工具）：
@@ -96,7 +217,7 @@ pipx ensurepath
 > proot-distro login debian
 > ```
 
-## 6. 克隆项目并安装依赖
+### 6. 克隆项目并安装依赖
 
 ```bash
 git clone https://github.com/moesnow/March7thAssistant --depth 1
@@ -106,7 +227,7 @@ uv sync --only-group docker
 
 > **注意**：克隆仓库需要访问 GitHub，如果遇到网络问题，可以尝试通过代理下载，或使用 GitHub 镜像站。
 
-## 7. 配置环境变量
+### 7. 配置环境变量
 
 ```bash
 export MARCH7TH_CLOUD_GAME_ENABLE=true
@@ -134,7 +255,7 @@ export MARCH7TH_DRIVER_PATH=/usr/bin/chromedriver
 > EOF
 > ```
 
-## 8. 运行
+### 8. 运行
 
 ```bash
 uv run --only-group docker main.py
@@ -148,7 +269,63 @@ uv run --only-group docker main.py
 
 如果一切顺利，你应该能够在安卓设备上成功运行 March7th Assistant 了！
 
-![Termux 运行成功示例](termux-success.jpg)
+### 如何更新
+
+```bash
+cd ~/March7thAssistant
+git pull
+uv sync --only-group docker
+```
+
+### 启动非完整运行任务
+
+默认情况下运行的是**完整运行**，如果只想执行某个子任务，可以在命令后指定任务名称：
+
+```bash
+uv run --only-group docker main.py daily
+```
+
+常见示例：
+
+| 命令 | 说明 |
+|------|------|
+| `uv run --only-group docker main.py daily` | 仅执行每日实训 |
+| `uv run --only-group docker main.py power` | 仅执行清体力 |
+| `uv run --only-group docker main.py currencywars` | 仅执行货币战争 |
+| `uv run --only-group docker main.py divergent` | 仅执行差分宇宙 |
+| `uv run --only-group docker main.py notify` | 测试消息推送 |
+| `uv run --only-group docker main.py -l` | 查看完整任务列表 |
+
+### 附录：传统方式快速启动脚本
+
+如果不想每次手动输入命令，可以创建一个启动脚本。在 Termux 中执行：
+
+```bash
+cat > ~/start-m7a.sh << 'EOF'
+#!/bin/bash
+proot-distro login debian -- bash -c '
+  export MARCH7TH_CLOUD_GAME_ENABLE=true
+  export MARCH7TH_BROWSER_HEADLESS_ENABLE=true
+  export MARCH7TH_BROWSER_HEADLESS_RESTART_ON_NOT_LOGGED_IN=false
+  export MARCH7TH_DOCKER_STARTED=true
+  export MARCH7TH_LOG_LEVEL=DEBUG
+  export MARCH7TH_BROWSER_TYPE=chromium
+  export MARCH7TH_BROWSER_PATH=/usr/bin/chromium
+  export MARCH7TH_DRIVER_PATH=/usr/bin/chromedriver
+  cd ~/March7thAssistant
+  uv run --only-group docker main.py
+'
+EOF
+chmod +x ~/start-m7a.sh
+```
+
+之后只需在 Termux 中执行：
+
+```bash
+~/start-m7a.sh
+```
+
+---
 
 ## 修改配置文件
 
@@ -179,25 +356,6 @@ nano config.yaml
 
 修改完成后按 `Ctrl+O` 保存，`Ctrl+X` 退出 nano。
 
-## 启动非完整运行任务
-
-默认情况下运行的是**完整运行**，如果只想执行某个子任务，可以在命令后指定任务名称：
-
-```bash
-uv run --only-group docker main.py daily
-```
-
-常见示例：
-
-| 命令 | 说明 |
-|------|------|
-| `uv run --only-group docker main.py daily` | 仅执行每日实训 |
-| `uv run --only-group docker main.py power` | 仅执行清体力 |
-| `uv run --only-group docker main.py currencywars` | 仅执行货币战争 |
-| `uv run --only-group docker main.py divergent` | 仅执行差分宇宙 |
-| `uv run --only-group docker main.py notify` | 测试消息推送 |
-| `uv run --only-group docker main.py -l` | 查看完整任务列表 |
-
 ## 常见问题
 
 ### Q: 网络连接失败怎么办？
@@ -215,40 +373,3 @@ uv run --only-group docker main.py daily
 ```
 
 这些是 onnxruntime 在 proot 环境下的已知警告，**不影响正常运行**，可以忽略。
-
-### Q: 如何更新到最新版本？
-
-```bash
-cd March7thAssistant
-git pull
-uv sync --only-group docker
-```
-
-## 附录：快速启动脚本
-
-如果不想每次手动输入命令，可以创建一个启动脚本。在 Termux 中执行：
-
-```bash
-cat > ~/start-m7a.sh << 'EOF'
-#!/bin/bash
-proot-distro login debian -- bash -c '
-  export MARCH7TH_CLOUD_GAME_ENABLE=true
-  export MARCH7TH_BROWSER_HEADLESS_ENABLE=true
-  export MARCH7TH_BROWSER_HEADLESS_RESTART_ON_NOT_LOGGED_IN=false
-  export MARCH7TH_DOCKER_STARTED=true
-  export MARCH7TH_LOG_LEVEL=DEBUG
-  export MARCH7TH_BROWSER_TYPE=chromium
-  export MARCH7TH_BROWSER_PATH=/usr/bin/chromium
-  export MARCH7TH_DRIVER_PATH=/usr/bin/chromedriver
-  cd ~/March7thAssistant
-  uv run --only-group docker main.py
-'
-EOF
-chmod +x ~/start-m7a.sh
-```
-
-之后只需在 Termux 中执行：
-
-```bash
-~/start-m7a.sh
-```
