@@ -650,7 +650,7 @@ class CloudGameController(GameControllerBase):
             return
         self._last_interruption_check_time = now
 
-        if self._check_time_insufficient_dialog() or True:
+        if self._check_time_insufficient_dialog():
             self.log_error("检测到付费时长耗尽弹窗，正在中断运行")
             from module.notification import notif
             from module.notification.notification import NotificationLevel
