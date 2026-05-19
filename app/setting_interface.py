@@ -23,6 +23,7 @@ from tasks.base.tasks import start_task
 from .tools.check_update import checkUpdate
 import os
 import sys
+import platform
 
 
 class _PivotScrollFilter(QObject):
@@ -1491,7 +1492,7 @@ class SettingInterface(ScrollArea):
             tr('检查更新'),
             FIF.INFO,
             tr('关于'),
-            tr('当前版本：') + " " + cfg.version
+            tr('当前版本：') + " " + cfg.version + " | Python " + sys.version.split()[0] + " | " + platform.system() + " " + platform.machine()
         )
         self.updateSourceCard = ExpandableComboBoxSettingCardUpdateSource(
             "update_source",
