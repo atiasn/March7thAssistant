@@ -363,7 +363,7 @@ nano config.yaml
 
 部分 Termux 用户在云游戏启动后会遇到弹窗 "等待时间较长，您可以选择继续等待，或退出后重新进入游戏。"，同时出现 "正在努力重连中1/3"。
 
-这是已知问题（[#1070](https://github.com/moesnow/March7thAssistant/issues/1070)），目前仅在安卓 Termux 部署中出现，原因尚未确认。如果遇到此问题，可以尝试重新运行程序。
+这是已知问题（[#1070](https://github.com/moesnow/March7thAssistant/issues/1070)），目前仅在安卓 Termux 部署中出现，疑似与安卓版本、内核版本或手机系统有关，新款手机更容易出现此类兼容性问题。如果遇到此问题，可以尝试更换设备或重新运行程序。
 
 ### Q: 运行时出现 onnxruntime 警告怎么办？
 
