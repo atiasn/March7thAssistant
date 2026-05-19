@@ -1522,6 +1522,7 @@ class CloudGameController(GameControllerBase):
             self.log_debug(f"设置战斗二倍速为 {'开启' if status else '关闭'}")
         else:
             self.log_debug("未检测到 UID，跳过设置战斗二倍速")
+            self.log_info("首次启动未检测到 UID，战斗二倍速将在下次启动时自动配置")
 
         save["IntDicts"] = int_dicts
         cloud["value"]["RPGCloudSave"] = json.dumps(save)
