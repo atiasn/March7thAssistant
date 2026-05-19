@@ -1447,5 +1447,6 @@
     "剩余 {days} 天": "{days} days remaining",
     "CDK 有效 (＾∀＾●)": "CDK Valid (＾∀＾●)",
     "今天到期": "Expires today",
-    "CDK 验证失败 (╥╯﹏╰╥)": "CDK Validation Failed (╥╯﹏╰╥)"
+    "CDK 验证失败 (╥╯﹏╰╥)": "CDK Validation Failed (╥╯﹏╰╥)",
+    "不存在的翻译": ""
 }
