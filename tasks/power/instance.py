@@ -194,7 +194,7 @@ class Instance:
             if cfg.instance_team_enable:
                 instance_name = Instance.get_current_instance_name(instance_type)
                 team = Instance.get_target_team(instance_type, instance_name)
-                if re.match(r"^[01]?[0-9]$", team):
+                if re.fullmatch(r"[01]?[0-9]", team):
                     team_name = f"队伍{int(team)}"
                     if auto.click_element((619 / 1920, 780 / 1080, 77 / 1920, 75 / 1080), "crop"):
                         if auto.click_element("预设编队", "text", max_retries=4, retry_delay=0.5, crop=(6 / 1920, 8 / 1080, 578 / 1920, 168 / 1080)):
