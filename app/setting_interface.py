@@ -1141,6 +1141,7 @@ class SettingInterface(ScrollArea):
                     "userid": {"title": tr("用户/群组 ID"), "description": tr("接收通知的用户 ID 或群组 ID（以 - 开头）")},
                     "api_url": {"title": tr("自定义 API 地址"), "description": tr("可选参数，自定义 Telegram API 地址，例如 api.telegram.org")},
                     "proxies": {"title": tr("代理配置"), "description": tr("可选参数，例如 127.0.0.1:10808 或 socks5://127.0.0.1:1080，不填则使用系统 PAC 代理")},
+                    "thread_id": {"title": tr("话题 ID"), "description": tr("可选参数，开启 Topics 功能的群组需要填写对应的话题 ID")},
                 }
             },
             "matrix": {
