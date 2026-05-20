@@ -99,3 +99,39 @@ class TestOCRReplaceStrings:
         results = [{"txt": "hello", "score": 0.99}]
         replaced = ocr.replace_strings(results)
         assert replaced[0]["txt"] == "world"
+
+
+class TestDisableOpenVINOTelemetry:
+    def test_disable_openvino_telemetry_does_not_create_consent_files(self, monkeypatch, tmp_path):
+        from unittest.mock import MagicMock
+        from openvino_telemetry.utils.opt_in_checker import ConsentCheckResult, OptInChecker
+
+        original_check = OptInChecker.check
+        original_create_or_check_consent_dir = OptInChecker.create_or_check_consent_dir
+        original_update_result = OptInChecker.update_result
+        had_flag = hasattr(OptInChecker, "_march7th_telemetry_disabled")
+        original_flag = getattr(OptInChecker, "_march7th_telemetry_disabled", None)
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        ocr = OCR.__new__(OCR)
+        ocr.logger = MagicMock()
+
+        try:
+            ocr._disable_openvino_telemetry()
+
+            intel_dir = tmp_path / "intel"
+            assert not intel_dir.exists()
+
+            checker = OptInChecker()
+            assert checker.check(enable_opt_in_dialog=False) == ConsentCheckResult.DECLINED
+            assert checker.create_or_check_consent_dir() is False
+            assert checker.update_result(ConsentCheckResult.DECLINED) is False
+            assert not intel_dir.exists()
+        finally:
+            OptInChecker.check = original_check
+            OptInChecker.create_or_check_consent_dir = original_create_or_check_consent_dir
+            OptInChecker.update_result = original_update_result
+            if had_flag:
+                OptInChecker._march7th_telemetry_disabled = original_flag
+            elif hasattr(OptInChecker, "_march7th_telemetry_disabled"):
+                delattr(OptInChecker, "_march7th_telemetry_disabled")
