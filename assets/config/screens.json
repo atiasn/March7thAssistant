@@ -1125,5 +1125,18 @@
                 ]
             }
         ]
+    },
+    {
+        "name": "稍后再看",
+        "id": "see_later",
+        "image_path": "./assets/images/screen/see_later.png",
+        "actions": [
+            {
+                "target_screen": "main",
+                "actions_list": [
+                    "auto.click_element('./assets/images/screen/see_later.png', 'image', 0.9, 10)"
+                ]
+            }
+        ]
     }
 ]
