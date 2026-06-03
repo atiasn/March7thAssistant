@@ -1,15 +1,20 @@
 # coding:utf-8
 """
 Localization Module
-Support for Chinese/Korean/English UI languages
+Support for Chinese, Japanese, Korean, and English UI languages
 """
 import json
 import os
 import re
+import sys
 
 _current_lang = "zh_CN"
 _translations = {}
-_locale_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "locales")
+
+if getattr(sys, 'frozen', False):
+    _locale_dir = os.path.join(os.path.dirname(sys.executable), "assets", "locales")
+else:
+    _locale_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "locales")
 
 # simple s2t converter (use opencc if available, fallback to simple mapping)
 
@@ -33,7 +38,7 @@ _character_names_cache = None
 def load_language(lang_code: str = None):
     """
     Load language file
-    :param lang_code: Language code (zh_CN, ko_KR, en_US)
+    :param lang_code: Language code (zh_CN, zh_TW, ja_JP, ko_KR, en_US)
     """
     global _current_lang, _translations
 
@@ -53,7 +58,28 @@ def load_language(lang_code: str = None):
 
     locale_path = os.path.join(_locale_dir, f"{lang_code}.json")
 
-    if os.path.exists(locale_path):
+    if lang_code == "ja_JP":
+        try:
+            base_translations = {}
+            en_us_path = os.path.join(_locale_dir, "en_US.json")
+            if os.path.exists(en_us_path):
+                with open(en_us_path, 'r', encoding='utf-8') as f:
+                    base_translations = json.load(f)
+
+            if os.path.exists(locale_path):
+                with open(locale_path, 'r', encoding='utf-8') as f:
+                    ja_translations = json.load(f)
+                for key, value in ja_translations.items():
+                    if isinstance(value, str) and value.strip():
+                        base_translations[key] = value
+
+            _translations = base_translations
+            _current_lang = lang_code
+        except Exception as e:
+            print(f"언어 파일 로드 실패: {e}")
+            _translations = {}
+            _current_lang = "zh_CN"
+    elif os.path.exists(locale_path):
         try:
             with open(locale_path, 'r', encoding='utf-8') as f:
                 _translations = json.load(f)
@@ -106,6 +132,7 @@ def tr(text: str) -> str:
             missing_prompts = {
                 "zh_CN": f"[译缺: {text}]",
                 "zh_TW": f"[譯缺: {text}]",
+                "ja_JP": f"[翻訳漏れ: {text}]",
                 "ko_KR": f"[번역 누락: {text}]",
                 "en_US": f"[Missing: {text}]"
             }
@@ -123,6 +150,7 @@ def get_available_languages() -> dict:
     return {
         "简体中文": "zh_CN",
         "繁體中文": "zh_TW",
+        "日本語": "ja_JP",
         "한국어": "ko_KR",
         "English": "en_US"
     }
@@ -139,7 +167,7 @@ def sync_translations():
         with open(zh_cn_path, 'r', encoding='utf-8') as f:
             zh_translations = json.load(f)
         keys = set(zh_translations.keys())
-        for lang in ["zh_TW", "ko_KR", "en_US"]:
+        for lang in ["zh_TW", "ja_JP", "ko_KR", "en_US"]:
             lang_path = os.path.join(_locale_dir, f"{lang}.json")
             if os.path.exists(lang_path):
                 with open(lang_path, 'r', encoding='utf-8') as f:
@@ -174,7 +202,10 @@ def get_character_names(include_none: bool = False) -> dict:
     """
     global _character_names_cache
     if _character_names_cache is None:
-        names_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "config", "character_names.json")
+        if getattr(sys, 'frozen', False):
+            names_path = os.path.join(os.path.dirname(sys.executable), "assets", "config", "character_names.json")
+        else:
+            names_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "config", "character_names.json")
         try:
             if os.path.exists(names_path):
                 with open(names_path, 'r', encoding='utf-8') as f:
@@ -209,7 +240,10 @@ def get_raw_instance_names() -> dict:
     """Load raw instance names mapping from JSON file (no localization)."""
     global _instance_names_cache_raw
     if _instance_names_cache_raw is None:
-        names_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "config", "instance_names.json")
+        if getattr(sys, 'frozen', False):
+            names_path = os.path.join(os.path.dirname(sys.executable), "assets", "config", "instance_names.json")
+        else:
+            names_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "config", "instance_names.json")
         try:
             if os.path.exists(names_path):
                 with open(names_path, 'r', encoding='utf-8') as f:

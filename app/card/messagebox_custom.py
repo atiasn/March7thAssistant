@@ -1,13 +1,14 @@
 from PySide6.QtCore import Qt, QUrl, QSize
-from PySide6.QtWidgets import QLabel, QHBoxLayout, QVBoxLayout, QToolButton, QCompleter
+from PySide6.QtWidgets import QLabel, QHBoxLayout, QVBoxLayout, QToolButton, QCompleter, QSizePolicy
 from PySide6.QtGui import QPixmap, QDesktopServices, QFont
 from qfluentwidgets import (MessageBox, LineEdit, ComboBox, EditableComboBox, DateTimeEdit,
                             BodyLabel, FluentStyleSheet, TextEdit, Slider, FluentIcon, qconfig,
-                            isDarkTheme, PrimaryPushSettingCard, InfoBar, InfoBarPosition, PushButton, SpinBox, CheckBox)
+                            isDarkTheme, PrimaryPushSettingCard, InfoBar, InfoBarPosition, PushButton, SpinBox, CheckBox, SimpleCardWidget,
+                            TextBrowser, setCustomStyleSheet)
 from qfluentwidgets import FluentIcon as FIF
 from typing import Optional
 from module.config import cfg
-from module.localization import tr, get_instance_names, instance_display_to_raw
+from module.localization import tr, get_raw_instance_names, get_instance_names, instance_display_to_raw
 import datetime
 import json
 import time
@@ -256,6 +257,123 @@ class MessageBoxHtmlUpdate(MessageBox):
 
     def open_url(self, url):
         QDesktopServices.openUrl(QUrl(url))
+
+
+class MessageBoxTutorial(MessageBox):
+    """通知方式配置教程对话框"""
+
+    def __init__(self, title: str, tutorial_html: str, parent=None):
+        super().__init__(title, "", parent)
+
+        self.textLayout.removeWidget(self.contentLabel)
+        self.contentLabel.clear()
+
+        self.yesButton.setText(tr('关闭'))
+        self.cancelButton.setHidden(True)
+
+        self.buttonGroup.setMinimumWidth(580)
+        self.setMinimumWidth(620)
+
+        # 教程样式
+        tutorial_style = """
+        <style>
+        body {
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        h3 {
+            color: #f18cb9;
+            margin-top: 8px;
+            margin-bottom: 4px;
+        }
+        h4 {
+            margin-top: 12px;
+            margin-bottom: 4px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 4px;
+        }
+        a {
+            color: #f18cb9;
+            font-weight: bold;
+        }
+        code {
+            background-color: rgba(128, 128, 128, 0.15);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: Consolas, Monaco, monospace;
+        }
+        ol, ul {
+            margin-left: 20px;
+            margin-top: 4px;
+            margin-bottom: 4px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .tip {
+            background-color: rgba(241, 140, 185, 0.1);
+            border-left: 3px solid #f18cb9;
+            padding: 8px 12px;
+            margin: 8px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .warning {
+            background-color: rgba(255, 183, 77, 0.1);
+            border-left: 3px solid #ffb74d;
+            padding: 8px 12px;
+            margin: 8px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        </style>
+        """
+
+        # 根据主题调整样式
+        if isDarkTheme():
+            tutorial_style = tutorial_style.replace("border-bottom: 1px solid #eee;", "border-bottom: 1px solid #444;")
+
+        full_html = tutorial_style + tutorial_html
+
+        # 创建 TextBrowser 显示教程
+        self.tutorialBrowser = TextBrowser(self)
+        self.tutorialBrowser.setText(full_html)
+        self.tutorialBrowser.setOpenExternalLinks(True)
+        self.tutorialBrowser.anchorClicked.connect(self._open_url)
+        self.tutorialBrowser.setMinimumHeight(400)
+        self.tutorialBrowser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # 自定义滚动条样式
+        custom_scrollbar_qss = """
+            QTextBrowser {
+                background: transparent;
+                border: none;
+                selection-background-color: #f18cb9;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(128, 128, 128, 150);
+                border-radius: 4px;
+                min-height: 30px;
+                margin: 2px 1px 2px 1px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(128, 128, 128, 200);
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: transparent;
+            }
+        """
+        setCustomStyleSheet(self.tutorialBrowser, custom_scrollbar_qss, custom_scrollbar_qss)
+
+        self.textLayout.addWidget(self.tutorialBrowser, 1, Qt.AlignmentFlag.AlignTop)
+
+    def _open_url(self, url):
+        QDesktopServices.openUrl(url)
 
 
 class MessageBoxUpdate(MessageBoxHtmlUpdate):
@@ -864,6 +982,34 @@ class MessageBoxPowerPlan(MessageBox):
         addButtonLayout.addStretch(1)
         self.textLayout.addLayout(addButtonLayout)
 
+    def _update_plan_row_actions(self):
+        """同步更新每一行操作按钮状态"""
+        for index, row in enumerate(self.plan_rows):
+            row["move_up_button"].setEnabled(index > 0)
+
+    def _remove_plan_layout(self, row_layout):
+        """从计划布局中移除指定行布局"""
+        for index in range(self.planLayout.count()):
+            item = self.planLayout.itemAt(index)
+            if item and item.layout() is row_layout:
+                self.planLayout.takeAt(index)
+                return
+
+    def _move_plan_row_up(self, row):
+        """将指定计划上移一行"""
+        try:
+            current_index = self.plan_rows.index(row)
+        except ValueError:
+            return
+
+        if current_index <= 0:
+            return
+
+        self._remove_plan_layout(row["layout"])
+        self.plan_rows.insert(current_index - 1, self.plan_rows.pop(current_index))
+        self.planLayout.insertLayout(current_index - 1, row["layout"])
+        self._update_plan_row_actions()
+
     def add_plan_row(self, instance_type=None, instance_name=None, count=1):
         """添加一行体力计划配置"""
         # 检查是否已达到最大数量限制
@@ -905,6 +1051,12 @@ class MessageBoxPowerPlan(MessageBox):
         deleteButton = PushButton(tr("删除"), self)
         deleteButton.setMaximumWidth(60)
 
+        # 上移按钮
+        moveUpButton = PushButton(tr("上移"), self)
+        moveUpButton.setMaximumWidth(60)
+
+        row = {}
+
         # 更新副本名称选项的函数
         def update_instance_names(selected_type):
             nameComboBox.clear()
@@ -937,6 +1089,8 @@ class MessageBoxPowerPlan(MessageBox):
 
         # 删除按钮功能
         def delete_row():
+            self._remove_plan_layout(horizontalLayout)
+
             # 从界面移除
             horizontalLayout.setParent(None)
             for i in reversed(range(horizontalLayout.count())):
@@ -946,9 +1100,11 @@ class MessageBoxPowerPlan(MessageBox):
                     widget.deleteLater()
 
             # 从列表中移除
-            if (typeComboBox, nameComboBox, countSpinBox, deleteButton) in self.plan_rows:
-                self.plan_rows.remove((typeComboBox, nameComboBox, countSpinBox, deleteButton))
+            if row in self.plan_rows:
+                self.plan_rows.remove(row)
+                self._update_plan_row_actions()
 
+        moveUpButton.clicked.connect(lambda: self._move_plan_row_up(row))
         deleteButton.clicked.connect(delete_row)
 
         # 添加到布局
@@ -958,17 +1114,30 @@ class MessageBoxPowerPlan(MessageBox):
         horizontalLayout.addWidget(nameComboBox)
         horizontalLayout.addWidget(QLabel(tr("次数:")))
         horizontalLayout.addWidget(countSpinBox)
+        horizontalLayout.addWidget(moveUpButton)
         horizontalLayout.addWidget(deleteButton)
 
         self.planLayout.addLayout(horizontalLayout)
 
         # 保存到列表
-        self.plan_rows.append((typeComboBox, nameComboBox, countSpinBox, deleteButton))
+        row.update({
+            "layout": horizontalLayout,
+            "type_combo": typeComboBox,
+            "name_combo": nameComboBox,
+            "count_spin": countSpinBox,
+            "move_up_button": moveUpButton,
+            "delete_button": deleteButton,
+        })
+        self.plan_rows.append(row)
+        self._update_plan_row_actions()
 
     def get_plans(self):
         """获取所有计划，并把显示文本还原为中文原始值"""
         plans = []
-        for typeCombo, nameCombo, countSpin, _ in self.plan_rows:
+        for row in self.plan_rows:
+            typeCombo = row["type_combo"]
+            nameCombo = row["name_combo"]
+            countSpin = row["count_spin"]
             instance_type = typeCombo.currentText()
             instance_name = nameCombo.text()
 
@@ -982,7 +1151,9 @@ class MessageBoxPowerPlan(MessageBox):
 
     def validate_inputs(self):
         """验证所有输入是否匹配可选项"""
-        for i, (typeCombo, nameCombo, countSpin, _) in enumerate(self.plan_rows, 1):
+        for i, row in enumerate(self.plan_rows, 1):
+            typeCombo = row["type_combo"]
+            nameCombo = row["name_combo"]
             instance_type = typeCombo.currentText()
             input_text = nameCombo.text()
 
@@ -1075,3 +1246,178 @@ class MessageBoxCloseWindow(MessageBox):
             cfg.set_value('close_window_action', 'close')
         _cleanup_infobars(self)
         super().reject()
+
+
+class MessageBoxInstanceTeam(MessageBox):
+    """副本队伍映射配置对话框"""
+
+    def __init__(self, title: str, default_team: int, teams: list[dict], parent=None):
+        super().__init__(title, "", parent)
+        self.default_team = default_team
+        self.teams = teams or []
+
+        self.instance_names = get_raw_instance_names()
+
+        self.textLayout.removeWidget(self.contentLabel)
+        self.contentLabel.clear()
+
+        self.yesButton.setText(tr("确认"))
+        self.cancelButton.setText(tr("取消"))
+
+        self.buttonGroup.setMinimumWidth(600)
+
+        self.defaultTeamSpinbox = None
+        self.ruleLayout = None
+        self.rule_widgets = []
+
+        self._setup_layouts()
+        self._setup_datas()
+    
+    def _setup_layouts(self):
+        top_section = self._setup_top_section()
+        table_section = self._setup_table_section()
+        self.textLayout.addLayout(top_section)
+        self.textLayout.addLayout(table_section)
+
+    def _setup_datas(self):
+        for team in self.teams:
+            self._add_rule_row(team.get("instance_name"), team.get("team_number", self.default_team))
+
+    def _setup_top_section(self):
+        """设置全局区域 - 默认队伍"""
+        self.defaultTeamSpinbox = SpinBox()
+        self.defaultTeamSpinbox.setMinimum(1)
+        self.defaultTeamSpinbox.setMaximum(12)
+        self.defaultTeamSpinbox.setValue(self.default_team)
+        self.defaultTeamSpinbox.setMinimumWidth(120)
+
+        hLayout = QHBoxLayout()
+        hLayout.addWidget(QLabel(tr("当没有匹配到任何规则时，默认出战队伍：")))
+        hLayout.addStretch(1)
+        hLayout.addWidget(self.defaultTeamSpinbox)
+
+        # 应用布局
+        cardContainer = SimpleCardWidget(self)
+        vLayout = QVBoxLayout(cardContainer)
+        vLayout.addLayout(hLayout)
+
+        layoutWrapper = QVBoxLayout()
+        layoutWrapper.addWidget(cardContainer)
+        return layoutWrapper
+
+    def _setup_table_section(self):
+        """设置表格区域 - 规则列表"""
+
+        # 规则列表容器
+        self.ruleLayout = QVBoxLayout()
+
+        # 添加按钮
+        buttonLayout = QHBoxLayout()
+        addButton = PushButton(tr("添加"), self)
+        addButton.clicked.connect(self._add_rule_row)
+        buttonLayout.addWidget(addButton, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # 应用布局
+        cardContainer = SimpleCardWidget(self)
+        vLayout = QVBoxLayout(cardContainer)
+        vLayout.addLayout(self.ruleLayout)
+        vLayout.addLayout(buttonLayout)
+
+        layoutWrapper = QVBoxLayout()
+        layoutWrapper.addWidget(cardContainer)
+        return layoutWrapper
+
+    def _add_rule_row(self, instance_name=None, team_number=None):
+        """添加一行副本队伍规则配置"""
+        horizontalLayout = QHBoxLayout()
+
+        # 副本名称下拉框
+        nameComboBox = EditableComboBox()
+        nameComboBox.setMinimumWidth(280)
+
+        # 加载所有副本名称选项
+        for itype, names_dict in self.instance_names.items():
+            for iname in names_dict:
+                if iname == "无":
+                    continue
+                display_type = tr(itype)
+                display_name = tr(iname)
+                if not display_type.endswith(("）", "」")):
+                    display_type = display_type + " "
+                if not display_name.startswith(("（", "「")):
+                    display_name = " " + display_name
+                nameComboBox.addItem(f"{display_type}-{display_name}", userData=iname)
+
+        if instance_name:
+            index = nameComboBox.findData(instance_name)
+            if index >= 0:
+                nameComboBox.setCurrentIndex(index)
+
+        setup_completer(nameComboBox, [item.text for item in nameComboBox.items])
+
+        # 队伍编号选择框
+        teamSpinBox = SpinBox()
+        teamSpinBox.setMinimum(1)
+        teamSpinBox.setMaximum(12)
+        teamSpinBox.setValue(team_number or 3)
+        teamSpinBox.setMinimumWidth(120)
+
+        # 删除按钮
+        deleteButton = PushButton(tr("删除"), self)
+        deleteButton.setMaximumWidth(60)
+
+        def delete_row():
+            horizontalLayout.setParent(None)
+            for i in reversed(range(horizontalLayout.count())):
+                widget = horizontalLayout.itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
+            if (nameComboBox, teamSpinBox, deleteButton) in self.rule_widgets:
+                self.rule_widgets.remove((nameComboBox, teamSpinBox, deleteButton))
+
+        deleteButton.clicked.connect(delete_row)
+
+        # 应用布局
+        horizontalLayout.addWidget(QLabel(tr("名称:")))
+        horizontalLayout.addWidget(nameComboBox)
+        horizontalLayout.addWidget(QLabel(tr("队伍:")))
+        horizontalLayout.addWidget(teamSpinBox)
+        horizontalLayout.addWidget(deleteButton)
+
+        self.ruleLayout.addLayout(horizontalLayout)
+        self.rule_widgets.append((nameComboBox, teamSpinBox, deleteButton))
+
+    def get_rules(self):
+        """获取所有规则配置"""
+        teams = []
+        for nameCombo, teamSpin, _ in self.rule_widgets:
+            instance_name = nameCombo.currentData()
+            team_number = teamSpin.value()
+
+            if instance_name and team_number > 0:
+                teams.append({"instance_name": instance_name, "team_number": team_number})
+
+        return teams
+
+    def get_default_team(self):
+        """获取默认队伍编号"""
+        if self.defaultTeamSpinbox:
+            return self.defaultTeamSpinbox.value()
+        return 3
+
+    def accept(self):
+        """确认并保存"""
+        _cleanup_infobars(self)
+        super().accept()
+
+    def reject(self):
+        """取消"""
+        _cleanup_infobars(self)
+        try:
+            super().reject()
+        except Exception:
+            try:
+                self.close()
+            except Exception:
+                pass

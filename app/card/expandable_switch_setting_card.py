@@ -2,8 +2,10 @@
 from typing import Union, List
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon
-from qfluentwidgets import ExpandSettingCard, FluentIconBase, SwitchButton, IndicatorPosition, SettingCard, ComboBox, PrimaryPushButton
-from module.localization import tr
+from PySide6.QtWidgets import QWidget
+from qfluentwidgets import ExpandSettingCard, FluentIconBase, SwitchButton, IndicatorPosition, SettingCard, ComboBox, PrimaryPushButton, PushButton
+from module.localization import tr, instance_display_to_raw
+from .switchsettingcard1 import build_timestamp_content
 
 
 class ExpandableSwitchSettingCard(ExpandSettingCard):
@@ -60,6 +62,18 @@ class ExpandableSwitchSettingCard(ExpandSettingCard):
         """Get current switch state"""
         return self.switchButton.isChecked()
 
+    def insertWidgetBeforeSwitch(self, widget: QWidget):
+        """在开关按钮之前插入控件"""
+        layout = self.card.hBoxLayout
+        # 找到开关按钮的位置
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item and item.widget() == self.switchButton:
+                # 在开关按钮之前插入控件
+                layout.insertWidget(i, widget)
+                layout.insertSpacing(i + 1, 10)
+                break
+
     def addSettingCard(self, card: SettingCard):
         """添加子设置卡片到可展开区域"""
         self.viewLayout.addWidget(card)
@@ -95,6 +109,87 @@ class ExpandableSwitchSettingCard(ExpandSettingCard):
         except:
             pass
         # 发送收起信号
+        self.expandStateChanged.emit(False)
+
+
+class ExpandableTimestampSwitchSettingCard(ExpandSettingCard):
+    """带时间副标题和重置按钮的可展开开关设置卡片"""
+
+    switchChanged = Signal(bool)
+    expandStateChanged = Signal(bool)
+
+    def __init__(self, configname: str, timestamp_configname: str, icon: Union[str, QIcon, FluentIconBase],
+                 title: str, time_title: str, content: str = None, parent=None):
+        self.configname = configname
+        self.timestampConfigname = timestamp_configname
+        self.timeTitle = time_title
+        self._baseContent = content or ""
+
+        timestamp_content, _ = build_timestamp_content(self._baseContent, self.timeTitle, self.timestampConfigname)
+        super().__init__(icon, title, timestamp_content, parent)
+
+        from module.config import cfg
+        self.cfg = cfg
+
+        self.resetButton = PushButton(tr("重置时间"), self)
+        self.card.addWidget(self.resetButton)
+
+        self.switchButton = SwitchButton(tr('关'), self, IndicatorPosition.RIGHT)
+        self.card.addWidget(self.switchButton)
+
+        self.setValue(self.cfg.get_value(self.configname))
+
+        self.resetButton.clicked.connect(self._resetTimestamp)
+        self.switchButton.checkedChanged.connect(self.__onSwitchChanged)
+
+        self.refreshTimestampContent()
+
+    def __onSwitchChanged(self, isChecked: bool):
+        self.setValue(isChecked)
+        self.cfg.set_value(self.configname, isChecked)
+        self.switchChanged.emit(isChecked)
+
+    def setValue(self, isChecked: bool):
+        self.switchButton.setChecked(isChecked)
+        self.switchButton.setText(tr('开') if isChecked else tr('关'))
+
+    def refreshTimestampContent(self):
+        timestamp_content, has_timestamp = build_timestamp_content(self._baseContent, self.timeTitle, self.timestampConfigname)
+        self.card.setContent(timestamp_content)
+        self.resetButton.setEnabled(has_timestamp)
+
+    def _resetTimestamp(self):
+        self.cfg.set_value(self.timestampConfigname, 0)
+        self.refreshTimestampContent()
+
+    def getSwitchState(self) -> bool:
+        return self.switchButton.isChecked()
+
+    def addSettingCard(self, card: SettingCard):
+        self.viewLayout.addWidget(card)
+        self._adjustViewSize()
+
+    def addSettingCards(self, cards: List[SettingCard]):
+        for card in cards:
+            self.viewLayout.addWidget(card)
+        self._adjustViewSize()
+
+    def setExpand(self, isExpand: bool):
+        is_expanding = not self.isExpand
+
+        if is_expanding:
+            self.expandStateChanged.emit(True)
+
+        super().setExpand(isExpand)
+
+        if not is_expanding:
+            self.expandAni.finished.connect(lambda: self._onCollapseFinished())
+
+    def _onCollapseFinished(self):
+        try:
+            self.expandAni.finished.disconnect()
+        except Exception:
+            pass
         self.expandStateChanged.emit(False)
 
 
@@ -295,12 +390,13 @@ class ExpandableComboBoxSettingCard(ExpandSettingCard):
 
 
 class ExpandableComboBoxSettingCardUpdateSource(ExpandSettingCard):
-    """可展开的下拉菜单设置卡片 - 用于更新源选择"""
+    """可展开的下拉菜单设置卡片 - 用于更新源及更新通道选择"""
 
     expandStateChanged = Signal(bool)
 
     def __init__(self, configname: str, icon: Union[str, QIcon, FluentIconBase],
-                 title: str, update_callback, content: str = None, texts: dict = None, parent=None):
+                 title: str, update_callback, content: str = None, texts: dict = None,
+                 secondary_configname: str = None, secondary_texts: dict = None, parent=None):
         """
         参数:
         - configname: 配置项名称
@@ -309,15 +405,14 @@ class ExpandableComboBoxSettingCardUpdateSource(ExpandSettingCard):
         - update_callback: 更新回调函数
         - content: 内容描述
         - texts: 下拉菜单选项 {'显示名': '值'}
+        - secondary_configname: 第二个配置项名称
+        - secondary_texts: 第二个下拉菜单选项 {'显示名': '值'}
         - parent: 父组件
         """
         super().__init__(icon, title, content, parent)
         self.configname = configname
+        self.secondaryConfigname = secondary_configname
         self.update_callback = update_callback
-
-        # ComboBox
-        self.comboBox = ComboBox(self)
-        self.card.addWidget(self.comboBox)
 
         # Import config here to avoid circular import
         from module.config import cfg
@@ -325,19 +420,41 @@ class ExpandableComboBoxSettingCardUpdateSource(ExpandSettingCard):
         self.cfg = cfg
         self.checkUpdate = checkUpdate
 
-        # Set combo box items
-        if texts:
-            for key, value in texts.items():
-                self.comboBox.addItem(key, userData=value)
-                if value == self.cfg.get_value(configname):
-                    self.comboBox.setCurrentText(key)
+        self.secondaryComboBox = None
+        if secondary_configname and secondary_texts:
+            self.secondaryComboBox = ComboBox(self)
+            self.secondaryComboBox.setMinimumWidth(110)
+            self.card.addWidget(self.secondaryComboBox)
+            self._initComboBox(self.secondaryComboBox, secondary_configname, secondary_texts)
+
+        self.comboBox = ComboBox(self)
+        self.comboBox.setMinimumWidth(110)
+        self.card.addWidget(self.comboBox)
+        self._initComboBox(self.comboBox, configname, texts)
 
         # Connect signals
         self.comboBox.currentIndexChanged.connect(self.__onComboBoxChanged)
+        if self.secondaryComboBox is not None:
+            self.secondaryComboBox.currentIndexChanged.connect(self.__onSecondaryComboBoxChanged)
+
+    def _initComboBox(self, combo_box: ComboBox, configname: str, texts: dict | None):
+        if not texts:
+            return
+
+        current_value = self.cfg.get_value(configname)
+        for key, value in texts.items():
+            combo_box.addItem(key, userData=value)
+            if value == current_value:
+                combo_box.setCurrentText(key)
 
     def __onComboBoxChanged(self, index: int):
         """ComboBox changed slot"""
         self.cfg.set_value(self.configname, self.comboBox.itemData(index))
+        self.checkUpdate(self.update_callback)
+
+    def __onSecondaryComboBoxChanged(self, index: int):
+        """Secondary ComboBox changed slot"""
+        self.cfg.set_value(self.secondaryConfigname, self.secondaryComboBox.itemData(index))
         self.checkUpdate(self.update_callback)
 
     def setExpand(self, isExpand: bool):
@@ -378,7 +495,7 @@ class ExpandableComboBoxSettingCardUpdateSource(ExpandSettingCard):
         self._adjustViewSize()
 
 
-class ExpandableComboBoxSettingCard1(ExpandSettingCard):
+class ExpandableComboBoxSettingCardInstanceType(ExpandSettingCard):
     """可展开的下拉菜单设置卡片 - 用于 ComboBoxSettingCard1 类型"""
 
     expandStateChanged = Signal(bool)
@@ -413,14 +530,14 @@ class ExpandableComboBoxSettingCard1(ExpandSettingCard):
                 for item in texts:
                     self.comboBox.addItem(item)
                 # 尝试从配置中设置当前项
-                current_value = self.cfg.get_value(configname)
+                current_value = tr(self.cfg.get_value(configname))
                 if current_value and current_value in texts:
                     self.comboBox.setCurrentText(current_value)
             else:
                 # 如果是字典，按照字典方式处理
                 for key, value in texts.items():
                     self.comboBox.addItem(key, userData=value)
-                    if value == self.cfg.get_value(configname):
+                    if value == tr(self.cfg.get_value(configname)):
                         self.comboBox.setCurrentText(key)
 
         # Connect signals
@@ -428,7 +545,7 @@ class ExpandableComboBoxSettingCard1(ExpandSettingCard):
 
     def __onComboBoxChanged(self, index: int):
         """ComboBox changed slot"""
-        self.cfg.set_value(self.configname, self.comboBox.currentText())
+        self.cfg.set_value(self.configname, instance_display_to_raw(self.comboBox.currentText()))
         self.currentIndexChanged.emit(index)
 
     def setExpand(self, isExpand: bool):

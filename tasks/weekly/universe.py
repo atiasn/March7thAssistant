@@ -13,7 +13,7 @@ import sys
 import os
 from module.config import asu_config
 from utils.console import pause_on_error, pause_and_retry
-from tasks.power.instance import Instance
+from tasks.power.power import Power
 
 
 class Universe:
@@ -145,7 +145,7 @@ class Universe:
         else:
             command = [os.path.join(cfg.universe_path, "simul.exe")] if cfg.universe_operation_mode == "exe" else [cfg.python_exe_path, "simul.py"]
 
-        if category == "divergent" and cfg.universe_disable_gpu:
+        if category == "divergent" and not cfg.universe_enable_gpu:
             command.append("--cpu")
 
         if category != "divergent" and cfg.universe_bonus_enable:
@@ -293,7 +293,7 @@ class Universe:
             except Exception as e:
                 log.error(f"获取培养目标副本失败: {e}")
 
-            Instance.run("饰品提取", instance_name, 40, immersifier_count)
+            Power.process("饰品提取", instance_name, immersifier_only = True)
 
     @staticmethod
     def gui():
@@ -330,3 +330,4 @@ class Universe:
         else:
             log.warning(f"无法解析模拟宇宙积分: {score}")
         return False
+
