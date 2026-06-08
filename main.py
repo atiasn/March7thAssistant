@@ -4,7 +4,11 @@ import argparse
 # 将当前工作目录设置为程序所在的目录，确保无论从哪里执行，其工作目录都正确设置为程序本身的位置，避免路径错误。
 os.chdir(os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)else os.path.dirname(os.path.abspath(__file__)))
 
+from utils.dpi import configure_dpi_awareness
 from utils.tasks import AVAILABLE_TASKS
+
+
+configure_dpi_awareness()
 
 
 def parse_args():
