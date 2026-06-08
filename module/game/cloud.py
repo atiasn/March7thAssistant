@@ -457,8 +457,10 @@ class CloudGameController(GameControllerBase):
             free_selector = "#app > div.home-wrapper > div.welcome > div.welcome-wrapper > div > div.wel-card__content > div.wel-card__content--wallet > div.wallet-item.ft > div.left > span > span:nth-child(2)"
             paid_els = self.driver.find_elements(By.CSS_SELECTOR, paid_selector)
             free_els = self.driver.find_elements(By.CSS_SELECTOR, free_selector)
-            paid = int(paid_els[0].text.strip()) if paid_els else None
-            free = int(free_els[0].text.strip()) if free_els else None
+            paid_text = paid_els[0].text.strip() if paid_els else None
+            free_text = free_els[0].text.strip() if free_els else None
+            paid = int(paid_text) if paid_text and paid_text.isdigit() else None
+            free = int(free_text) if free_text and free_text.isdigit() else None
             return paid, free
         except StaleElementReferenceException:
             self.log_debug("获取剩余时长失败: 页面元素已更新，将重试")
