@@ -1485,7 +1485,7 @@
     "界面可切换性测试": "Screen Switchability Test",
     "测试": "Test",
     "以最短路径遍历所有可达界面，验证界面切换是否正常": "Traverse all reachable screens via the shortest path to verify screen switching works correctly",
-    "自动对话（全局热键，支持后台）": "",
-    "快捷键: {hotkey}（可在设置中修改）": "",
-    "启用快捷键切换自动对话": ""
+    "自动对话（全局热键，支持后台）": "Auto Dialogue (Global Hotkey, Works in Background)",
+    "快捷键: {hotkey}（可在设置中修改）": "Hotkey: {hotkey} (Configurable in Settings)",
+    "启用快捷键切换自动对话": "Enable Hotkey to Toggle Auto Dialogue"
 }
