@@ -177,6 +177,8 @@ class StepEditDialog(QDialog):
         self.resize(640, 420)
         self.setMinimumWidth(560)
 
+        StyleSheet.WORKFLOW_INTERFACE.apply(self)
+
         self.original_step = normalize_step(step or {"type": "click_text"})
         self.workflow = workflow
         self.step_type_labels = [tr(STEP_TYPE_LABELS[key]) for key in self.STEP_TYPES]
