@@ -8,7 +8,10 @@
 - Bark 推送新增 base_url 参数支持自定义服务器地址
 - 企业微信应用通知新增自定义 URL 支持 [#1072](https://github.com/moesnow/March7thAssistant/pull/1072) @shing-yu
 - 新增对自动切换视角弹窗的支持 [#1084](https://github.com/moesnow/March7thAssistant/pull/1084) @shing-yu
+- 更新副本掉落配置，修复部分新副本无法识别的问题 [#1081](https://github.com/moesnow/March7thAssistant/pull/1081) @g60cBQ
+- 优化货币战争装备识别逻辑，阿格莱雅和希儿策略下支持识别进阶装备 [#1054](https://github.com/moesnow/March7thAssistant/pull/1054) @loader3229
 - 修复模拟宇宙快速启动实际执行类型和描述不一致
+- 修复 CI 构建配置兼容性问题 [#1065](https://github.com/moesnow/March7thAssistant/pull/1065) @sparklelcm333
 - 优化性能和稳定性并修复若干已知问题
 - [欢迎关注我们的B站账号，获取最新动态和教程](https://space.bilibili.com/3706960664857075)
 
