@@ -1461,6 +1461,9 @@
     "提升晋升等级，推荐在最低职级选择默认策略。提升职级等级，推荐在最高职级选择阿格莱雅策略。": "To increase ascension level, recommended strategy is default strategy in lowest difficulty. To increase rank level, recommended strategy is Aglaea strategy in highest difficulty. ",
     "未配置，阿格莱雅策略下将跳过该角色，需要填入自己游戏名称": "Not set, this character will be skipped for Aglaea strategy. Please set this to your in-game nickname.",
     "该参数用于配置该通知方式的请求字段": "This parameter is used to configure the request field for this notification method",
-    "教程": "",
-    "{} 配置教程": ""
+    "教程": "튜토리얼",
+    "{} 配置教程": "{} 설정 튜토리얼",
+    "界面可切换性测试": "화면 전환 테스트",
+    "测试": "테스트",
+    "以最短路径遍历所有可达界面，验证界面切换是否正常": "최단 경로로 이동 가능한 모든 화면을 순회하여 화면 전환이 정상적으로 작동하는지 확인합니다"
 }
