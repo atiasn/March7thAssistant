@@ -5,22 +5,12 @@ import subprocess
 import ctypes
 from typing import Literal, Tuple, Optional
 from utils.logger.logger import Logger
+from utils.dpi import configure_dpi_awareness
 
 
-# Set process as DPI-aware to get actual pixel dimensions instead of scaled values
-# This needs to be called once before any window operations
-# PROCESS_PER_MONITOR_DPI_AWARE = 1 (Windows 8.1+)
-PROCESS_PER_MONITOR_DPI_AWARE = 1
-try:
-    # Try to set DPI awareness (Windows 8.1+)
-    ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
-except (OSError, AttributeError):
-    try:
-        # Fallback for older Windows versions
-        ctypes.windll.user32.SetProcessDPIAware()
-    except (OSError, AttributeError):
-        # If both fail, continue without DPI awareness (likely not on Windows)
-        pass
+# Keep a module-level fallback for non-standard entry points that import game control
+# classes directly without going through app.py or main.py.
+configure_dpi_awareness()
 
 
 class GameControllerBase:
