@@ -168,11 +168,21 @@ def run_sub_task(action):
                 raise ConnectionError("启动或连接浏览器失败")
         game.switch_to_game()
 
+    def _run_loop_task_with_telemetry(task_id, task_fn):
+        while True:
+            telemetry.track_task_start(task_id)
+            task_start_time = time.time()
+            try:
+                success = bool(task_fn())
+                telemetry.track_task_complete(task_id, success, time.time() - task_start_time)
+            except Exception:
+                telemetry.track_task_complete(task_id, False, time.time() - task_start_time)
+                raise
+
     def currencywars(mode=None):
         war = CurrencyWars()
         if mode == "loop":
-            while True:
-                war.start()
+            _run_loop_task_with_telemetry("currencywarsloop", war.start)
         elif mode == "temp":
             war.loop()
         else:
@@ -181,8 +191,7 @@ def run_sub_task(action):
     def divergent(mode=None):
         universe = DivergentUniverse()
         if mode == "loop":
-            while True:
-                universe.start()
+            _run_loop_task_with_telemetry("divergentloop", universe.start)
         elif mode == "temp":
             universe.loop()
         else:
@@ -207,14 +216,17 @@ def run_sub_task(action):
     }
     task = sub_tasks.get(action)
     if task:
-        telemetry.track_task_start(action)
-        task_start_time = time.time()
-        try:
+        if action in {"currencywarsloop", "divergentloop"}:
             task()
-            telemetry.track_task_complete(action, True, time.time() - task_start_time)
-        except Exception:
-            telemetry.track_task_complete(action, False, time.time() - task_start_time)
-            raise
+        else:
+            telemetry.track_task_start(action)
+            task_start_time = time.time()
+            try:
+                task()
+                telemetry.track_task_complete(action, True, time.time() - task_start_time)
+            except Exception:
+                telemetry.track_task_complete(action, False, time.time() - task_start_time)
+                raise
     game.stop(False)
 
 
