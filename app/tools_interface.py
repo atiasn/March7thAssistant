@@ -322,3 +322,9 @@ class ToolsInterface(ScrollArea):
         # Update options if auto plot is running
         if self.automaticPlotCard.getSwitchState():
             tool.update_plot_options(options)
+
+    def toggleAutoPlot(self):
+        """切换自动对话状态（供全局热键调用）"""
+        current_state = self.automaticPlotCard.getSwitchState()
+        new_state = not current_state
+        self.automaticPlotCard.setValue(new_state)
