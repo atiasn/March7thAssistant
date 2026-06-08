@@ -69,7 +69,7 @@ def start_game():
                 log.info("检测到登录过期，尝试自动登录")
                 auto_login()
             else:
-                raise Exception("账号登录过期")
+                raise PermissionError("账号登录过期")
         if auto.find_element("./assets/images/screen/password_field.png", "image", 0.9, take_screenshot=False):
             if load_acc_and_pwd(gamereg_uid()) != (None, None):
                 log.info("检测到登录过期，尝试自动登录")
@@ -77,7 +77,7 @@ def start_game():
         # 游戏已有新版本，请前往启动器下载最新客户端，完成本次更新后登录游戏即可获
         # 得300星琼奖励。
         if auto.find_element("前往启动器下载最新客户端", "text", take_screenshot=False, include=True):
-            raise Exception("检测到游戏客户端版本过低，请前往启动器下载最新客户端")
+            raise RuntimeError("检测到游戏客户端版本过低，请前往启动器下载最新客户端")
 
         # 适配B服，需要点击“登录”，强制使用前台截图方式（#901）
         if auto.find_element(("bilibili游戏隐私政策提示", "登录记录"), "text", use_background_screenshot=False):
@@ -147,7 +147,7 @@ def start_game():
                 starrail.change_auto_battle(True)
 
             if not starrail.start_game_process():
-                raise Exception("启动游戏失败")
+                raise RuntimeError("启动游戏失败")
             time.sleep(10)
 
             if not wait_until(lambda: starrail.switch_to_game(), 360):
@@ -182,10 +182,10 @@ def start_game():
 
     def start_cloud_game():
         if not cloud_game.start_game_process():
-            raise Exception("启动或连接浏览器失败")
+            raise ConnectionError("启动或连接浏览器失败")
         if not cloud_game.is_in_game():
             if not cloud_game.enter_cloud_game():
-                raise Exception("进入云游戏失败")
+                raise ConnectionError("进入云游戏失败")
             time.sleep(10)
             if not wait_until(lambda: cloud_game_check_and_enter(), cfg.start_game_timeout * 60):
                 raise TimeoutError("查找并点击进入按钮超时")
@@ -489,7 +489,7 @@ def auto_login():
                     if auto.click_element("./assets/images/screen/enter_game.png", "image", 0.9, max_retries=10):
                         if auto.find_element("./assets/images/screen/welcome.png", "image", 0.9, max_retries=10):
                             return
-    raise Exception("尝试自动登录失败")
+    raise PermissionError("尝试自动登录失败")
 
 
 def auto_login_os():
@@ -507,4 +507,4 @@ def auto_login_os():
             if auto.click_element("./assets/images/screen/enter_game.png", "image", 0.9, max_retries=10):
                 if auto.find_element("./assets/images/screen/welcome.png", "image", 0.9, max_retries=10):
                     return
-    raise Exception("尝试自动登录失败")
+    raise PermissionError("尝试自动登录失败")

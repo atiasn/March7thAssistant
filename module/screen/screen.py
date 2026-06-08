@@ -335,7 +335,7 @@ class Screen(metaclass=SingletonMeta):
         # self.logger.error("如果是云·星穹铁道：")
         else:
             self.logger.error("使用云·星穹铁道请确保网络正常，浏览器能正常加载游戏画面")
-        raise Exception(error_message)
+        raise RuntimeError(error_message)
 
     def ensure_current_screen_is_clean(self):
         """

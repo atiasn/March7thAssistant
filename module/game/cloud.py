@@ -147,7 +147,7 @@ class CloudGameController(GameControllerBase):
             except TimeoutException:
                 pass
 
-        raise Exception("页面加载失败，多次刷新无效。")
+        raise ConnectionError("页面加载失败，多次刷新无效。")
 
     def _confirm_viewport_resolution(self) -> None:
         """
@@ -196,7 +196,7 @@ class CloudGameController(GameControllerBase):
                     self.log_info("正在下载浏览器和驱动...")
                     SeleniumManager().binary_paths(args)
                 except WebDriverException as e:
-                    raise Exception(f"浏览器和驱动下载失败：{e}")
+                    raise RuntimeError(f"浏览器和驱动下载失败：{e}")
         else:
             # 尝试在本地查找浏览器
             args = ["--browser", browser_type,
@@ -215,7 +215,7 @@ class CloudGameController(GameControllerBase):
             try:
                 result = SeleniumManager().binary_paths(args)
             except WebDriverException as e:
-                raise Exception(f"查找 {browser_type} 浏览器出错：{e}")
+                raise RuntimeError(f"查找 {browser_type} 浏览器出错：{e}")
             browser_path = result["browser_path"]
             driver_path = result["driver_path"]
         self.log_debug(f"browser_path = {browser_path}")
@@ -345,10 +345,10 @@ class CloudGameController(GameControllerBase):
                         self.log_warning(f"删除残留文件失败: {file_path}, 错误: {e}")
             self.log_error("如果设置了浏览器启动参数，请去掉所有浏览器启动参数后重试")
             self.log_error("如果仍然存在问题，请更换浏览器重试")
-            raise Exception("浏览器启动失败")
+            raise RuntimeError("浏览器启动失败")
         except Exception as e:
             self.log_error(f"浏览器启动失败: {e}")
-            raise Exception("浏览器启动失败")
+            raise RuntimeError("浏览器启动失败")
 
         if not self.cfg.cloud_game_fullscreen_enable:
             self.driver.set_window_size(1920, 1120)
@@ -1152,7 +1152,7 @@ class CloudGameController(GameControllerBase):
             return False
 
         if remaining == 0:
-            raise Exception("云游戏剩余时长为 0，停止运行")
+            raise RuntimeError("云游戏剩余时长为 0，停止运行")
         return False
 
     def _take_video_screenshot(self, crop=(0, 0, 1, 1)) -> tuple[bytes, tuple[int, int]] | None:

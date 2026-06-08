@@ -218,9 +218,9 @@ class GameControllerBase:
 
         # 基本检查
         if not hwnd:
-            raise Exception("Invalid window handle: 0")
+            raise RuntimeError("Invalid window handle: 0")
         if user32.IsWindow(hwnd) == 0:
-            raise Exception(f"Invalid window handle: {hwnd}")
+            raise RuntimeError(f"Invalid window handle: {hwnd}")
 
         # 如果被图标化，先还原（常见场景）
         if user32.IsIconic(hwnd):
@@ -266,4 +266,4 @@ class GameControllerBase:
                 pass
 
         # 如果都失败，抛出异常以便调用方记录或处理
-        raise Exception("Failed to set window foreground after multiple attempts")
+        raise RuntimeError("Failed to set window foreground after multiple attempts")

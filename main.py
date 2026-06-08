@@ -165,7 +165,7 @@ def run_sub_task(action):
     else:
         if cfg.cloud_game_enable:
             if not cloud_game.start_game_process():
-                raise Exception("启动或连接浏览器失败")
+                raise ConnectionError("启动或连接浏览器失败")
         game.switch_to_game()
 
     def currencywars(mode=None):
