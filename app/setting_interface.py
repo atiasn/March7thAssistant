@@ -11,6 +11,7 @@ from .card.comboboxsettingcard1 import ComboBoxSettingCard1
 from .card.comboboxsettingcard2 import ComboBoxSettingCard2, ComboBoxSettingCardUpdateSource, ComboBoxSettingCardLog, ComboBoxSettingCardLanguage
 from .card.switchsettingcard1 import SwitchSettingCard1, SwitchSettingCardWithAction, TimestampSwitchSettingCard, SwitchSettingCardTeam, SwitchSettingCardImmersifier, SwitchSettingCardGardenofplenty, SwitchSettingCardEchoofwar, SwitchSettingCardHotkey, SwitchSettingCardCloudGameStatus
 from .card.autostart_setting_card import AutostartSettingCard
+from .card.uac_free_setting_card import UacFreeSettingCard
 from .card.game_path_setting_card import GamePathSettingCard
 from .card.rangesettingcard1 import RangeSettingCard1
 from .card.pushsettingcard1 import CustomPushSettingCard, DualPushSettingCard, TriplePushSettingCard, PushSettingCardAction, PushSettingCardInstance, PushSettingCardInstanceChallengeCount, PushSettingCardNotifyTemplate, PushSettingCardMirrorchyan, PushSettingCardStr, PushSettingCardEval, PushSettingCardDate, PushSettingCardKey, PushSettingCardTeam, PushSettingCardFriends, PushSettingCardTeamWithSwap, PushSettingCardPowerPlan, InstanceTeamSettingCard
@@ -875,23 +876,15 @@ class SettingInterface(ScrollArea):
             tr("上次运行混沌回忆的时间"),
             ""
         )
-        self.forgottenhallLevelCard = PushSettingCardEval(
-            tr('修改'),
-            UiIcon.FILTER,
-            tr("关卡范围"),
-            "forgottenhall_level"
-        )
         # self.forgottenhallRetriesCard = RangeSettingCard1(
         #     "forgottenhall_retries",
         #     [0, 10],
         #     FIF.REMOVE_FROM,
         #     "重试次数",
         # )
-        self.forgottenhallTeamsCard = PushSettingCardTeamWithSwap(
+        self.forgottenhallConfigCard = ChallengeConfigCard(
             UiIcon.PEOPLE_TEAM,
-            tr("混沌回忆队伍配置"),
-            "forgottenhall_team1",
-            "forgottenhall_team2"
+            tr("混沌回忆配置"), "forgottenhall", 12
         )
         self.purefictionEnableCard = ExpandableTimestampSwitchSettingCard(
             "purefiction_enable",
@@ -913,17 +906,9 @@ class SettingInterface(ScrollArea):
             tr("上次运行末日幻影的时间"),
             ""
         )
-        self.ApocalypticLevelCard = PushSettingCardEval(
-            tr('修改'),
-            UiIcon.FILTER,
-            tr("关卡范围"),
-            "apocalyptic_level"
-        )
-        self.ApocalypticTeamsCard = PushSettingCardTeamWithSwap(
+        self.ApocalypticConfigCard = ChallengeConfigCard(
             UiIcon.PEOPLE_TEAM,
-            tr("末日幻影队伍配置"),
-            "apocalyptic_team1",
-            "apocalyptic_team2"
+            tr("末日幻影配置"), "apocalyptic", 4
         )
         self.CloudGameGroup = SettingCardGroup(
             tr("云崩铁设置"),
@@ -1100,31 +1085,17 @@ class SettingInterface(ScrollArea):
             tr('“退出”指退出游戏，不再建议使用循环模式，请改用日志界面的定时运行功能'),
             texts={tr('无'): 'None', tr('退出'): 'Exit', tr('关机'): 'Shutdown', tr('睡眠'): 'Sleep', tr('休眠'): 'Hibernate', tr('重启'): 'Restart', tr('注销'): 'Logoff', tr('关闭显示器'): 'TurnOffDisplay', tr('运行脚本'): 'RunScript', tr('循环'): 'Loop'}
         )
-        self.loopModeCard = ComboBoxSettingCard2(
-            "loop_mode",
-            UiIcon.REPEAT,
-            tr('循环模式（请改用日志界面的定时运行功能）'),
-            '',
-            texts={tr('定时任务'): 'scheduled', tr('根据开拓力'): 'power'}
-        )
         self.scheduledCard = TimePickerSettingCard1(
             "scheduled_time",
             FIF.DATE_TIME,
             tr("定时任务时间"),
-        )
-        self.powerLimitCard = RangeSettingCard1(
-            "power_limit",
-            [10, 300],
-            UiIcon.FLASH,
-            tr("循环运行再次启动所需开拓力"),
-            tr("游戏刷新后优先级更高"),
         )
         self.refreshHourEnableCard = RangeSettingCard1(
             "refresh_hour",
             [0, 23],
             FIF.DATE_TIME,
             tr("游戏刷新时间"),
-            tr("用于循环运行及判断任务状态，默认凌晨四点"),
+            tr("用于判断游戏每日刷新及任务状态，默认凌晨四点"),
         )
         self.ScriptPathCard = PushSettingCard(
             tr('修改'),
@@ -2531,6 +2502,11 @@ class SettingInterface(ScrollArea):
                 tr('在用户登录时启动'),
                 tr("登录后自动启动，点击「配置」进行详细设置；无人值守可能需要自行配置 Windows 自动登录")
             )
+            self.uacFreeCard = UacFreeSettingCard(
+                FIF.COMMAND_PROMPT,
+                tr('免 UAC 运行'),
+                tr("开启后，AI 助手或脚本通过 m7a.exe 运行任务时不再弹出 UAC 确认，适合让 AI 助手远程运行任务")
+            )
         if sys.platform == 'win32':
             self.debugModeEnableCard = SwitchSettingCard1(
                 FIF.DEVELOPER_TOOLS,
@@ -2786,8 +2762,7 @@ class SettingInterface(ScrollArea):
 
         self.ImmortalGameGroup.addSettingCard(self.forgottenhallEnableCard)
         self.forgottenhallEnableCard.addSettingCards([
-            self.forgottenhallLevelCard,
-            self.forgottenhallTeamsCard
+            self.forgottenhallConfigCard
         ])
 
         self.ImmortalGameGroup.addSettingCard(self.purefictionEnableCard)
@@ -2797,8 +2772,7 @@ class SettingInterface(ScrollArea):
 
         self.ImmortalGameGroup.addSettingCard(self.ApocalypticEnableCard)
         self.ApocalypticEnableCard.addSettingCards([
-            self.ApocalypticLevelCard,
-            self.ApocalypticTeamsCard
+            self.ApocalypticConfigCard
         ])
 
         self.CloudGameGroup.addSettingCard(self.cloudGameEnableCard)
@@ -2837,9 +2811,7 @@ class SettingInterface(ScrollArea):
         self.ProgramGroup.addSettingCard(self.exitAfterFailure)
         self.ProgramGroup.addSettingCard(self.afterFinishCard)
         self.afterFinishCard.addSettingCards([
-            self.loopModeCard,
             self.scheduledCard,
-            self.powerLimitCard,
             self.refreshHourEnableCard,
             self.ScriptPathCard
         ])
@@ -2866,6 +2838,7 @@ class SettingInterface(ScrollArea):
         self.MiscGroup.addSettingCard(self.localControlModeCard)
         if sys.platform == 'win32':
             self.MiscGroup.addSettingCard(self.autostartCard)
+            self.MiscGroup.addSettingCard(self.uacFreeCard)
             self.MiscGroup.addSettingCard(self.debugModeEnableCard)
         self.MiscGroup.addSettingCard(self.hotkeyCard)
 
