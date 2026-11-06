@@ -994,7 +994,7 @@ class SettingInterface(ScrollArea):
                    '110%': 1.10, '125%': 1.25, '150%': 1.5, '175%': 1.75, '200%': 2.0}
         )
         self.browserLaunchArgCard = PushSettingCardEval(
-            "修改",
+            tr("修改"),
             FIF.CODE,
             tr("浏览器启动参数"),
             "browser_launch_argument"
@@ -2401,7 +2401,7 @@ class SettingInterface(ScrollArea):
                 # 添加教程按钮（在开关左边）
                 if has_tutorial:
                     tutorialButton = PushButton(tr("教程"), self)
-                    tutorialButton.setFixedWidth(60)
+                    tutorialButton.setMinimumWidth(60)
                     # 使用 insertWidgetBeforeSwitch 在开关前插入按钮
                     notifyEnableCard.insertWidgetBeforeSwitch(tutorialButton)
                     # 保存教程内容引用
@@ -2427,7 +2427,7 @@ class SettingInterface(ScrollArea):
                 # 添加教程按钮（winotify 除外，放在开关左边）
                 if has_tutorial:
                     tutorialButton = PushButton(tr("教程"), self)
-                    tutorialButton.setFixedWidth(60)
+                    tutorialButton.setMinimumWidth(60)
                     # 在开关按钮之前插入教程按钮
                     insert_index = max(notifyEnableCard.hBoxLayout.count() - 3, 0)
                     notifyEnableCard.hBoxLayout.insertWidget(insert_index, tutorialButton, 0, Qt.AlignmentFlag.AlignRight)
@@ -2598,7 +2598,7 @@ class SettingInterface(ScrollArea):
             FIF.LANGUAGE,
             '界面语言 / 界面語言 / 日本語 / 인터페이스 언어 / UI Language',
             '切换后即时生效 / 切換後即時生效 / 切り替え後すぐ適用 / 변경 즉시 적용 / Takes effect immediately',
-            texts={'自动': AUTO_LANGUAGE, **available_languages()}
+            texts={tr('自动'): AUTO_LANGUAGE, **available_languages()}
         )
         self.telemetryCard = SwitchSettingCardWithAction(
             tr("查看说明"),

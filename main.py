@@ -133,6 +133,10 @@ def parse_args():
 
     args = parser.parse_args()
 
+    # AI 助手里已安装的 Skill 副本跟随小助手更新（仅打包版；不输出内容，不影响下面查询类命令的结果）
+    from utils.agent_skill import sync_installed_skills
+    sync_installed_skills()
+
     # 查询类命令只读配置：可能由未提权的 m7a.exe 调用，安装目录不一定可写
     if args.list or args.list_workflows:
         os.environ["MARCH7TH_CONFIG_READONLY"] = "1"
@@ -165,9 +169,15 @@ def parse_args():
 
     # 处理 --list-workflows 参数
     if args.list_workflows:
-        from module.workflow import list_workflow_names
-
-        names = list_workflow_names()
+        if args.json:
+            # 工作流模块初始化及读取过程可能输出日志，结构化结果只写入 stdout。
+            from contextlib import redirect_stdout
+            with redirect_stdout(sys.stderr):
+                from module.workflow import list_workflow_names
+                names = list_workflow_names()
+        else:
+            from module.workflow import list_workflow_names
+            names = list_workflow_names()
         if args.json:
             import json
             print(json.dumps({"workflows": names}, ensure_ascii=True))
@@ -312,6 +322,7 @@ from tasks.weekly.currency_wars import CurrencyWars
 from tasks.weekly.divergent_universe import DivergentUniverse
 from tasks.base.genshin_starRail_fps_unlocker import Genshin_StarRail_fps_unlocker
 from tasks.base import screen_test
+from tasks import character_export
 
 
 from utils.console import pause_on_error, pause_on_success, pause_always, is_docker_started
@@ -400,8 +411,11 @@ def run_main_actions(no_run_immediately=False):
 
 
 def run_sub_task(action):
+    # 不兼容无窗口模式的任务仅覆盖本次启动方式，不修改用户配置。
+    visible_cloud_tasks = {"fight", "universe"}
+    success = True
     if action not in ("currencywarstemp", "divergenttemp"):
-        game.start()
+        game.start(headless=False if action in visible_cloud_tasks else None)
     else:
         if cfg.cloud_game_enable:
             if not cloud_game.start_game_process():
@@ -449,6 +463,7 @@ def run_sub_task(action):
         "divergenttemp": lambda: divergent("temp"),
         "fight": Fight.start,
         "screen_test": screen_test.run,
+        "character_export": character_export.run,
         "universe": lambda: Universe.start(category="universe"),
         "forgottenhall": lambda: challenge.start("memoryofchaos"),
         "purefiction": lambda: challenge.start("purefiction"),
@@ -463,13 +478,19 @@ def run_sub_task(action):
             telemetry.track_task_start(action)
             task_start_time = time.time()
             try:
-                task()
-                telemetry.track_task_complete(action, True, time.time() - task_start_time)
+                result = task()
+                success = result is not False
+                telemetry.track_task_complete(action, success, time.time() - task_start_time)
             except Exception:
                 telemetry.track_task_complete(action, False, time.time() - task_start_time)
                 raise
-    if action != "screen_test":
-        game.stop(False)
+    if action not in ("screen_test", "character_export"):
+        if success:
+            game.stop(False)
+        elif cfg.after_finish == "Exit":
+            # 失败时仅响应显式退出游戏，不执行成功后的系统操作或循环等待。
+            game.get_game_controller().stop_game()
+    return success
 
 
 def run_sub_task_gui(action):
@@ -544,8 +565,8 @@ def main(action=None, no_run_immediately=False, workflow_name=None, workflow_ste
         run_main_actions(no_run_immediately)
 
     # 子任务
-    elif action in ["routine", "daily", "power", "currencywars", "currencywarsloop", "currencywarstemp", "divergent", "divergentloop", "divergenttemp", "fight", "universe", "forgottenhall", "purefiction", "apocalyptic", "redemption", "screen_test"]:
-        run_sub_task(action)
+    elif action in ["routine", "daily", "power", "currencywars", "currencywarsloop", "currencywarstemp", "divergent", "divergentloop", "divergenttemp", "fight", "universe", "forgottenhall", "purefiction", "apocalyptic", "redemption", "screen_test", "character_export"]:
+        return run_sub_task(action)
 
     # 子任务 原生图形界面
     elif action in ["universe_gui", "fight_gui"]:
