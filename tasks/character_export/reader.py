@@ -9,6 +9,7 @@
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -27,12 +28,20 @@ CHANGED_LEVEL = 24
 # 判断静止时灰度阈值要低，否则淡入的最后几帧会被当成已经静止
 STILL = 0.004
 STILL_LEVEL = 6
+STABLE_TIME = 0.1
+# 30 帧下静止面板的星空背景仍约有 0.8% 像素变化；标题、名字沿用更严格的阈值。
+PANEL_STILL = 0.02
 # 列表松手后会缓慢漂移约 1 像素，不影响 OCR，判定放宽
 POPUP_STILL = 0.03
 
 AVATAR_Y = 65
 AVATAR_BAR = (440, 18, 1040, 100)
 AVATAR_LEFT, AVATAR_RIGHT = 470, 1440
+AVATAR_ASSETS = Path("./assets/images/share/character")
+TRAILBLAZER_PREFIXES = ("Caelum", "Stelle")
+# 队伍选择和角色顶栏使用相同头像，大小略有差异。只比较中央，避开角标和选中光圈。
+AVATAR_SCALES = (0.58, 0.60, 0.62, 0.64)
+AVATAR_THRESHOLD = 0.82
 # 拖慢一点并在终点停留才没有惯性，移动约 8 格，重叠 1 格；惯性会让顶栏跳过角色
 AVATAR_DRAG = ((1360, AVATAR_Y), (520, AVATAR_Y), 0.5, 0.3)
 AVATAR_BACK_DRAG = ((700, AVATAR_Y), (1000, AVATAR_Y), 0.5, 0.3)
@@ -40,10 +49,12 @@ AVATAR_BACK_DRAG = ((700, AVATAR_Y), (1000, AVATAR_Y), 0.5, 0.3)
 AVATAR_MOVED = 0.05
 
 TAB_X = 243
-TAB_Y = {"detail": 155, "light_cone": 248, "traces": 342, "relics": 434, "eidolons": 528}
+TAB_Y = {"detail": 155, "light_cone": 248, "traces": 342, "relics": 434, "eidolons": 528, "info": 623}
+TAB_NAMES = {"detail": "详情", "light_cone": "光锥", "traces": "行迹", "relics": "遗器", "eidolons": "星魂", "info": "信息"}
+TAB_TITLE = (100, 35, 220, 25)
 RIGHT_PANEL = (1470, 110, 430, 480)
 # 左上角的“命途/名字”每个页签都有，切角色时立刻变化
-BREADCRUMB = (100, 60, 420, 40)
+BREADCRUMB = (100, 60, 330, 40)  # 避开右边第一个头像的选中动画
 
 SUMMARY_BOX = (1480, 112, 410, 460)
 # 名字和命途左边的图标会被 OCR 读成多余的字，识别前涂掉
@@ -53,6 +64,7 @@ ELEMENT_TEMPLATES = {label: f"./assets/images/share/character_panel/element_{key
 ELEMENT_THRESHOLD = 0.8
 PATH_SWITCH = "./assets/images/zh_CN/character_panel/path_switch.png"
 PATH_SWITCH_BOX = (1630, 950, 120, 80)
+INTRO_BOX = (1480, 370, 410, 155)
 
 STAT_BUTTON = (1774, 593)
 POPUP_TITLE = (420, 280, 200, 60)
@@ -120,6 +132,8 @@ EIDOLON_THRESHOLD = 0.8
 EIDOLON_UNLOCKED = "./assets/images/share/character_panel/eidolon_unlocked.png"
 EIDOLON_UNLOCKED_THRESHOLD = 0.08  # 带掩码的平方差匹配，越小越相似；灰色锁定外圈约 0.3。
 EIDOLON_SLOTS = ((669, 232), (1065, 219), (1538, 425), (1320, 902), (841, 870), (394, 783))
+# 只观察圆内图案，避开星魂立绘和粒子背景；相同魂数的不同角色也会换图案。
+EIDOLON_NODES = tuple((x - 24, y - 24, 48, 48) for x, y in EIDOLON_SLOTS)
 EIDOLON_SEARCH = 45
 EIDOLON_TIMEOUT = 3.0
 EIDOLON_STABLE_TIME = 0.15
@@ -143,6 +157,8 @@ def _crop(image, box):
 
 
 def _gray(image, box):
+    if isinstance(box[0], tuple):
+        return np.concatenate([_gray(image, region) for region in box], axis=1)
     return np.asarray(_crop(image, box).convert("L"), dtype=np.int16)
 
 
@@ -150,22 +166,64 @@ def _difference(first, second, level=CHANGED_LEVEL):
     return float((np.abs(first - second) > level).mean())
 
 
-def _recognize(image, origin):
+def _white_text(image):
+    """数值为亮白文字；滤掉偏蓝星空，避免把数字间的星星读成小数点，保留真正的白色小数点。"""
+    mask = cv2.inRange(np.asarray(image.convert("RGB")), (180, 180, 180), (255, 255, 255))
+    return cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
+
+
+def _numeric_crop(image):
+    """缩紧数值周围空白并留边：宽格里孤立的 6、9 等单字容易被 OCR 漏检。"""
+    pixels = _white_text(image)
+    _, _, stats, _ = cv2.connectedComponentsWithStats(pixels[:, :, 0])
+    glyphs = [(x, y, x + w, y + h) for x, y, w, h, area in stats[1:]
+              if h >= image.height // 2 and area >= 20]
+    if not glyphs:
+        return pixels, (0, 0)
+    # 用高字符确定整行边界，小数点和百分号的小圆点仍保留在这个范围内。
+    left = max(0, min(g[0] for g in glyphs) - 2)
+    top = max(0, min(g[1] for g in glyphs) - 2)
+    right = min(image.width, max(g[2] for g in glyphs) + 2)
+    bottom = min(image.height, max(g[3] for g in glyphs) + 2)
+    padded = cv2.copyMakeBorder(pixels[top:bottom, left:right], 16, 16, 16, 16, cv2.BORDER_CONSTANT, value=0)
+    return padded, (left - 16, top - 16)
+
+
+def _recognize(image, origin, *, recognition_only=False):
     try:
-        return parser.lines_from_ocr(ocr.recognize_multi_lines(np.array(image)), origin)
+        options = {"recognition_only": True} if recognition_only else {}
+        return parser.lines_from_ocr(ocr.recognize_multi_lines(np.array(image), **options), origin)
     except Exception as e:
         log.error(f"OCR识别失败：{e}")
         return []
 
 
+def _recognize_numeric(image, origin):
+    lines = _recognize(image, origin)
+    if not lines:
+        # 数值格已经定位且去除了背景，只补跑识别模型，不回退到整块带噪声的结果。
+        lines = _recognize(image, origin, recognition_only=True)
+    return lines
+
+
+def _avatar_circles(image, threshold, min_radius, max_radius):
+    gray = cv2.medianBlur(cv2.cvtColor(np.array(_crop(image, AVATAR_BAR)), cv2.COLOR_RGB2GRAY), 3)
+    circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp=1.2, minDist=80, param1=120,
+                               param2=threshold, minRadius=min_radius, maxRadius=max_radius)
+    return () if circles is None else circles[0]
+
+
 def find_avatar_slots(image):
     """检测顶栏头像的横坐标。顶栏静止后有吸附和右对齐两种偏移，只能看图定位。"""
-    gray = cv2.medianBlur(cv2.cvtColor(np.array(_crop(image, AVATAR_BAR)), cv2.COLOR_RGB2GRAY), 3)
-    circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, dp=1.2, minDist=80, param1=120, param2=22, minRadius=28, maxRadius=46)
-    if circles is None:
-        return []
-    centers = (round(float(circle[0])) + AVATAR_BAR[0] for circle in circles[0])
+    centers = (round(float(x)) + AVATAR_BAR[0] for x, _, _ in _avatar_circles(image, 22, 28, 46))
     return sorted(x for x in centers if AVATAR_LEFT <= x <= AVATAR_RIGHT)
+
+
+def _selected_avatar(image):
+    # 选中时多一层半径约 44 像素的白色外圈，普通头像的圆框约 35 像素。
+    centers = [round(float(x)) + AVATAR_BAR[0] for x, y, _ in _avatar_circles(image, 30, 40, 50)
+               if AVATAR_LEFT <= x + AVATAR_BAR[0] <= AVATAR_RIGHT and abs(y + AVATAR_BAR[1] - AVATAR_Y) <= 5]
+    return centers[0] if len(centers) == 1 else None
 
 
 class CharacterReader:
@@ -173,6 +231,9 @@ class CharacterReader:
         # OCR 引擎不并发，全部排到这一个线程
         self.ocr_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="character-ocr")
         self.templates = {}
+        self.avatar_assets = sorted(path for path in AVATAR_ASSETS.glob("*.png")
+                                    if path.stem.startswith((*TRAILBLAZER_PREFIXES, "March7th")))
+        self.avatar_templates = {}
         self.known_relic_sets = load_relic_sets()
         self.frame = None
         self.tab = "detail"
@@ -190,16 +251,21 @@ class CharacterReader:
         self.frame = image if image.size == (WIDTH, HEIGHT) else image.resize((WIDTH, HEIGHT))
         return self.frame
 
-    def _submit(self, image, box, blank=None):
+    def _submit(self, image, box, blank=None, white_text=False):
         crop = _crop(image, box)
+        origin = box[:2]
         if blank is not None:
             x, y, width, height = blank
             left, top = x - box[0], y - box[1]
             crop.paste((0, 0, 0), (left, top, left + width, top + height))
-        return self.ocr_pool.submit(_recognize, crop, box[:2])
+        if white_text:
+            crop, offset = _numeric_crop(crop)
+            origin = (origin[0] + offset[0], origin[1] + offset[1])
+        return self.ocr_pool.submit(_recognize_numeric if white_text else _recognize, crop, origin)
 
     def _submit_cells(self, image, rows):
-        return {y: self._submit(image, (x, y - VALUE_HEIGHT // 2, width, VALUE_HEIGHT)) for y, (x, width) in rows.items()}
+        return {y: self._submit(image, (x, y - VALUE_HEIGHT // 2, width, VALUE_HEIGHT), white_text=True)
+                for y, (x, width) in rows.items()}
 
     @staticmethod
     def _cell_texts(cells):
@@ -219,30 +285,36 @@ class CharacterReader:
         return auto.click_element((point[0] / WIDTH, point[1] / HEIGHT, 0, 0), "crop", take_screenshot=False, action=action)
 
     def _settle(self, box, before=None, timeout=1.5, still=STILL):
-        """等区域稳定并返回最后一帧；给了 before 时要先发生变化，等不到返回 None。"""
+        """等区域持续稳定；before 要求先变化，超时返回 None。"""
         deadline = time.monotonic() + timeout
         reference = _gray(before, box) if before is not None else None
         previous = None
+        stable_since = None
         while True:
             frame = self.grab()
             current = _gray(frame, box)
+            now = time.monotonic()
             if reference is None or _difference(reference, current) > CHANGED:
                 reference = None
-                if previous is not None and _difference(previous, current, STILL_LEVEL) <= still:
+                if previous is None or _difference(previous, current, STILL_LEVEL) > still:
+                    previous = current
+                    stable_since = now
+                elif now - stable_since >= STABLE_TIME:
                     return frame
-                previous = current
-            if time.monotonic() >= deadline:
+            if now >= deadline:
                 return None
 
-    def _act(self, action, box, timeout=1.5, retries=3):
+    def _act(self, action, box, timeout=1.5, retries=3, operation="界面操作", still=STILL):
         """执行操作直到区域发生变化。输入可能没发出去，不看返回值，只看画面。"""
+        before = self.frame
         for _ in range(retries):
-            before = self.frame
-            action()
-            frame = self._settle(box, before, timeout)
+            # 始终相对操作前的画面判断。已经变化但动画未结束时只继续等，不能再按 Esc/E。
+            if _difference(_gray(before, box), _gray(self.frame, box)) <= CHANGED:
+                action()
+            frame = self._settle(box, before, timeout, still=still)
             if frame is not None:
                 return frame
-        raise PageError("界面没有响应")
+        raise PageError(f"{operation}：界面没有响应或未稳定")
 
     def _drag(self, drag):
         (x1, y1), (x2, y2), duration, end_pause = drag
@@ -253,8 +325,12 @@ class CharacterReader:
 
     def open_tab(self, tab):
         if self.tab != tab:
-            self._act(lambda: self._click(TAB_X, TAB_Y[tab]), RIGHT_PANEL)
+            # 空光锥、行迹等页签的右栏可能相同，必须用标题确认切页，不能要求右栏变化。
+            self._act(lambda: self._click(TAB_X, TAB_Y[tab]), TAB_TITLE, operation=f"切换到{TAB_NAMES[tab]}页")
             self.tab = tab
+            # 星魂立绘持续运动，节点就绪由 read_eidolon 单独验证。
+            if tab != "eidolons" and self._settle(RIGHT_PANEL, still=PANEL_STILL) is None:
+                raise PageError(f"{TAB_NAMES[tab]}页内容未稳定")
         return self.frame
 
     def avatar_slots(self):
@@ -268,13 +344,20 @@ class CharacterReader:
 
         星魂页换角色时必须确认切换成功，否则读到的是上一个角色的画面。
         """
+        before = self.grab()
         for _ in range(3 if required else 1):
-            before = self.grab()
-            self._click(x, AVATAR_Y)
-            if self._settle(BREADCRUMB, before, timeout=0.5) is not None:
-                frame = self._settle(SUMMARY_BOX if self.tab == "detail" else RIGHT_PANEL, before, timeout=1.5)
-                if self.tab == "eidolons" and frame is None:
-                    raise PageError("切换角色后星魂区域没有响应")
+            if _difference(_gray(before, BREADCRUMB), _gray(self.frame, BREADCRUMB)) <= CHANGED:
+                self._click(x, AVATAR_Y)
+            renamed = self._settle(BREADCRUMB, before, timeout=0.5)
+            if renamed is None and _difference(_gray(before, BREADCRUMB), _gray(self.frame, BREADCRUMB)) > CHANGED:
+                renamed = self._settle(BREADCRUMB, before, timeout=1.0)
+            if renamed is not None:
+                if self.tab == "eidolons":
+                    frame = self._settle(EIDOLON_NODES, before, timeout=1.5, still=PANEL_STILL)
+                else:
+                    frame = self._settle(SUMMARY_BOX if self.tab == "detail" else RIGHT_PANEL, before, timeout=1.5, still=PANEL_STILL)
+                if frame is None:
+                    raise PageError(f"切换角色后{TAB_NAMES[self.tab]}区域没有响应或未稳定")
                 return True
         if required:
             raise PageError("无法切换角色")
@@ -294,14 +377,57 @@ class CharacterReader:
         return _difference(_gray(before, AVATAR_BAR), _gray(frame, AVATAR_BAR)) > AVATAR_MOVED
 
     def begin_summary(self):
-        return self._submit(self.frame, SUMMARY_BOX, blank=SUMMARY_ICONS)
+        frame = self.frame
+        return self._submit(frame, SUMMARY_BOX, blank=SUMMARY_ICONS), frame
+
+    def finish_summary(self, pending):
+        future, frame = pending
+        summary = parser.parse_summary(future.result(), allow_missing_name=True)
+        switchable = self.has_path_switch(frame)
+        avatar = self._match_avatar(frame)
+        if avatar is not None:
+            trailblazer = avatar.stem.startswith(TRAILBLAZER_PREFIXES)
+        else:
+            trailblazer = None if switchable or not summary["name"] else False
+        return {**summary, "switchable": switchable, "is_trailblazer": trailblazer}
+
+    def read_trailblazer_intro(self):
+        previous = self.tab
+        try:
+            self.open_tab("info")
+            pending = self._submit(self.frame, INTRO_BOX)
+        finally:
+            self.open_tab(previous)
+        return parser.is_trailblazer_intro(pending.result())
+
+    def _match_avatar(self, frame):
+        if not self.avatar_assets:
+            return None
+        x = _selected_avatar(frame)
+        if x is None:
+            return None
+        region = cv2.cvtColor(np.array(_crop(frame, (x - 36, AVATAR_Y - 34, 72, 68))), cv2.COLOR_RGB2BGR)
+        score, avatar = max((self._avatar_score(region, asset), asset) for asset in self.avatar_assets)
+        return avatar if score >= AVATAR_THRESHOLD else None
+
+    def _avatar_score(self, region, asset):
+        if asset not in self.avatar_templates:
+            image = ImageUtils.read_image(asset)
+            templates = ()
+            if image is not None:
+                height, width = image.shape[:2]
+                face = image[height // 4:3 * height // 4, width // 4:3 * width // 4]
+                templates = tuple(cv2.resize(face, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                                  for scale in AVATAR_SCALES)
+            self.avatar_templates[asset] = templates
+        return max((float(cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED).max())
+                    for template in self.avatar_templates[asset]), default=0.0)
 
     def begin_detail(self):
         self.open_tab("detail")
         return {
             "summary": self.begin_summary(),
             "element": self.read_element(),
-            "switchable": self.has_path_switch(),
             "stats": self.begin_stats(),
         }
 
@@ -310,20 +436,20 @@ class CharacterReader:
         label = max(scores, key=scores.get)
         return label if scores[label] >= ELEMENT_THRESHOLD else None
 
-    def has_path_switch(self):
-        return self._score(self.frame, PATH_SWITCH, PATH_SWITCH_BOX) >= BUTTON_THRESHOLD
+    def has_path_switch(self, frame):
+        return self._score(frame, PATH_SWITCH, PATH_SWITCH_BOX) >= BUTTON_THRESHOLD
 
     def begin_stats(self, careful=False):
         """打开属性详情，边滚动边抓帧，OCR 不等。careful 时逐步拖动，列表比预期长也不会漏行。"""
         self.open_tab("detail")
-        frame = self._act(lambda: self._click(*STAT_BUTTON), POPUP_TITLE)
+        frame = self._act(lambda: self._click(*STAT_BUTTON), POPUP_TITLE, operation="打开属性详情")
         extras = self._submit(frame, POPUP_EXTRAS)
         screens = [self._submit(frame, POPUP_ROWS)]
         if careful:
             self._drag_scroll(screens)
         else:
             self._hold_scroll(screens)
-        self._act(lambda: self._press("esc"), POPUP_TITLE)
+        self._act(lambda: self._press("esc"), POPUP_TITLE, operation="关闭属性详情")
         return screens, extras
 
     def _hold_scroll(self, screens):
@@ -443,12 +569,13 @@ class CharacterReader:
         if not equipped:
             return []
         # 空槽位也能进入替换页；不点替换页里的任何按钮，遗器就不会变
-        frame = self._act(lambda: self._click(*RELIC_SLOTS["头部"]), RIGHT_PANEL)
+        frame = self._act(lambda: self._click(*RELIC_SLOTS["头部"]), RIGHT_PANEL, operation="打开遗器详情", still=PANEL_STILL)
         pieces = []
         try:
             for index, slot in enumerate(RELIC_SLOTS):
                 if index:
-                    frame = self._act(lambda: self._press("e"), RELIC_PIECE_BOX, retries=2)
+                    frame = self._act(lambda: self._press("e"), RELIC_PIECE_BOX, retries=2,
+                                      operation=f"切换遗器部位到{slot}", still=PANEL_STILL)
                 if slot in equipped:
                     worn = self._wait_unequip_button(frame)
                     if worn is None:
@@ -458,7 +585,7 @@ class CharacterReader:
                 if slot == equipped[-1]:
                     break
         finally:
-            self._act(lambda: self._press("esc"), RELIC_BACK_BOX)
+            self._act(lambda: self._press("esc"), RELIC_BACK_BOX, operation="退出遗器详情")
         return pieces
 
     def _wait_unequip_button(self, frame):

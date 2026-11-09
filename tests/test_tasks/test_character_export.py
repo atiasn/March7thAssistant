@@ -242,6 +242,13 @@ def test_light_cone_value_comes_from_its_own_cell():
     assert parser.parse_light_cone(lines, {358: "582"})["stats"]["atk"] == 582
 
 
+@pytest.mark.parametrize("empty", [None, ""])
+def test_failed_light_cone_cell_cannot_use_noisy_block_value(empty):
+    lines = [L("1582", line.x, line.y) if line.text == "582" else line for line in LIGHT_CONE]
+    with pytest.raises(parser.ParseError, match="光锥属性"):
+        parser.parse_light_cone(lines, {358: empty})
+
+
 @pytest.mark.parametrize(("text", "expected"), [("等级80/8", (80, 80)), ("等级50/5", (50, 50)), ("等级1/20", (1, 20))])
 def test_gray_level_cap_may_lose_its_last_digit(text, expected):
     lines = [L(text, line.x, line.y) if line.text == "等级80/80" else line for line in LIGHT_CONE]
@@ -317,8 +324,91 @@ def test_noise_in_label_column_is_not_a_substat():
     assert len(piece["sub_stats"]) == 4
 
 
-def test_empty_cell_falls_back_to_block_value():
-    assert parser.parse_relic_piece(RELIC, {393: None})["sub_stats"][1]["value"] == 11.3
+def test_unmeasured_cell_can_use_block_value():
+    assert parser.parse_relic_piece(RELIC, {})["sub_stats"][1]["value"] == 11.3
+
+
+@pytest.mark.parametrize("empty", [None, ""])
+def test_failed_relic_cell_cannot_use_noisy_block_value(empty):
+    # 60 帧实机：单格 OCR 为空，整块却把速度 6 识别成了 60.。
+    lines = [L("速度", line.x, line.y) if line.text == "攻击力" else line for line in RELIC]
+    lines = [L("60.", line.x, line.y) if line.text == "3.8%" else line for line in lines]
+    with pytest.raises(parser.ParseError, match="速度 数值未识别"):
+        parser.parse_relic_piece(lines, {470: empty})
+
+
+@pytest.mark.parametrize("row", [0, 1])
+def test_numeric_crops_remove_star_dot_but_keep_decimal_points(row):
+    # 30 帧实机：两行分别为有/无干扰的帧；四列是 10.8%、4、7.7%、21。
+    with Image.open(Path(__file__).parent / "fixtures/character_relic_values.png") as samples:
+        cells = [samples.crop((col * 94, row * 34, (col + 1) * 94, (row + 1) * 34)) for col in range(4)]
+    attack = reader_module._white_text(cells[3])[:, :, 0]
+    assert not attack[:, 78:81].any()  # 2 和 1 之间的星星，不是真小数点。
+    assert np.count_nonzero(attack[:, 66:76]) >= 70
+    assert np.count_nonzero(attack[:, 82:89]) >= 55
+    for index, y in [(0, 23), (2, 24)]:
+        percent = reader_module._white_text(cells[index])[:, :, 0]
+        assert (percent[y:y + 3, 53:55] == 255).all()  # 真实百分比中的小数点。
+        cropped, (dx, dy) = reader_module._numeric_crop(cells[index])
+        assert (cropped[y-dy:y-dy+3, 53-dx:55-dx] == 255).all()
+
+
+@pytest.mark.parametrize("column", [0, 1])
+def test_single_digit_crop_keeps_strokes_and_adds_margin(column):
+    # 实机中去背景后被漏检的 9、6，移除大片左侧空白并补齐边距。
+    with Image.open(Path(__file__).parent / "fixtures/character_single_digits.png") as image:
+        cell = image.crop((column*94, 0, (column+1)*94, 34))
+    prepared, (dx, dy) = reader_module._numeric_crop(cell)
+    assert prepared.shape[1] < cell.width
+    assert not prepared[:16].any() and not prepared[-16:].any()
+    assert not prepared[:, :16].any() and not prepared[:, -16:].any()
+    original = reader_module._white_text(cell)
+    # 处理后的字形及其坐标仍能精确对应原图，没有重画数字。
+    h, w = prepared.shape[:2]
+    assert np.array_equal(prepared[16:-16, 16:-16], original[dy+16:dy+h-16, dx+16:dx+w-16])
+
+
+def test_successful_numeric_cells_are_filtered_without_extra_ocr(monkeypatch):
+    reader = reader_module.CharacterReader.__new__(reader_module.CharacterReader)
+    reader.ocr_pool = SimpleNamespace(submit=lambda function, *args: Done(function(*args)))
+    calls = []
+    monkeypatch.setattr(reader_module, "_recognize", lambda pixels, origin: calls.append((np.array(pixels), origin)) or [L("6", *origin)])
+    image = Image.new("RGB", (1920, 1080), (100, 120, 200))
+    cells = reader._submit_cells(image, reader_module.RELIC_VALUES)
+    assert len(cells) == len(calls) == 4
+    assert [origin for _, origin in calls] == [(1760, y - 17) for y in reader_module.RELIC_VALUES]
+    assert all(not pixels.any() for pixels, _ in calls)
+    reader._submit(image, reader_module.RELIC_PIECE_BOX)
+    assert (calls[-1][0] == (100, 120, 200)).all()  # 彩色主词条、套装正文不做此处理。
+
+
+@pytest.mark.parametrize("text", ["6", "9", "21", "10.8%"])
+def test_numeric_detection_miss_recognizes_the_same_crop_directly(text, monkeypatch):
+    calls = []
+    pixels = np.zeros((54, 47, 3), dtype=np.uint8)
+
+    def recognize(image, **options):
+        calls.append((image.copy(), options))
+        if options.get("recognition_only"):
+            return [[[[0, 0], [47, 0], [47, 54], [0, 54]], (text, 0.99)]]
+        return []
+
+    monkeypatch.setattr(reader_module, "ocr", SimpleNamespace(recognize_multi_lines=recognize))
+    result = reader_module._recognize_numeric(pixels, (1800, 400))
+    assert [line.text for line in result] == [text]
+    assert result[0].x == 1823.5 and result[0].y == 427
+    assert [options for _, options in calls] == [{}, {"recognition_only": True}]
+    assert all(np.array_equal(image, pixels) for image, _ in calls)
+
+
+def test_numeric_both_recognition_paths_can_fail_without_guessing(monkeypatch):
+    monkeypatch.setattr(reader_module, "ocr", SimpleNamespace(recognize_multi_lines=lambda *args, **kwargs: []))
+    assert reader_module._recognize_numeric(np.zeros((34, 94, 3), dtype=np.uint8), (0, 0)) == []
+
+
+def test_invalid_decimal_without_percent_is_still_rejected():
+    with pytest.raises(parser.ParseError, match="攻击力 2.1"):
+        parser.parse_relic_piece(RELIC, {470: "2.1"})
 
 
 def test_relic_piece_rejects_partial_read():
@@ -374,6 +464,25 @@ def test_second_read_only_fills_the_pieces_that_failed():
     assert problems == ["闪耀功勋的魔法少女 显示 4 件，实际读到 2 件"]
 
 
+def test_failed_numeric_cell_uses_existing_relic_retry():
+    from tasks.character_export import _finish
+
+    reader = relic_reader()
+    lines = [L("速度", line.x, line.y) if line.text == "攻击力" else line for line in RELIC]
+    lines = [L("60.", line.x, line.y) if line.text == "3.8%" else line for line in lines]
+    lines = [L(line.text.replace("(4)", "(1)"), line.x, line.y) for line in lines]
+    calls = []
+
+    def retry(first):
+        calls.append(first)
+        return reader.finish_relics([("头部", Done(lines), {470: Done([L("6", 1845, 470)])})], first["by_slot"])
+
+    result, problems = _finish([("头部", Done(lines), {470: Done([])})], reader.finish_relics, retry)
+    assert len(calls) == 1
+    assert problems == []
+    assert result["pieces"][0]["sub_stats"][3] == {"stat": "spd", "value": 6, "percent": False}
+
+
 def test_relic_sets_are_counted_from_pieces():
     pieces = [{"set": "闪耀功勋的魔法少女", "set_count": 4}] * 4 + [{"set": "天国@直播间", "set_count": 2}] * 2
     sets, problems = parser.summarize_relic_sets(pieces)
@@ -392,6 +501,13 @@ def test_relic_set_count_mismatch_is_reported():
 ])
 def test_trailblazer_detection(name, switchable, expected):
     assert parser.is_trailblazer(name, switchable) is expected
+
+
+@pytest.mark.parametrize("gender", ["少年", "少女"])
+def test_trailblazer_intro_accepts_both_protagonists_and_wrapped_lines(gender):
+    lines = [L("角色简介", 1538, 394), L(f"登上星穹列车的{gender}。", 1605, 430),
+             L("为了消除星核带来的", 1600, 463), L("危机，选择与星穹列车同行。", 1620, 495)]
+    assert parser.is_trailblazer_intro(lines) is True
 
 
 class Done:
@@ -434,6 +550,9 @@ class FakeReader:
 
     def begin_summary(self):
         return Done(summary_lines(self.selected))
+
+    def finish_summary(self, pending):
+        return {**parser.parse_summary(pending.result()), "is_trailblazer": False}
 
     def open_tab(self, tab):
         self.tab = tab
@@ -514,12 +633,12 @@ def test_cannot_find_read_character_after_dragging(export):
         job._walk()
 
 
-def test_always_enters_through_the_phone_menu(export, monkeypatch):
+def test_run_enters_and_finishes_at_phone_menu(export, monkeypatch):
     targets = []
     monkeypatch.setattr("tasks.character_export.screen", SimpleNamespace(change_to=targets.append))
     job = export([["甲"]])
     job.run()
-    assert targets == ["menu", "character", "main"]
+    assert targets == ["menu", "character", "menu"]
 
 
 def test_run_writes_output_and_removes_partial(export, tmp_path):
@@ -569,6 +688,42 @@ def test_character_that_keeps_failing_is_skipped_and_the_rest_are_read(export, t
     assert data["failed"] == [{"name": "乙", "path": "欢愉"}]
 
 
+def test_several_failed_characters_do_not_exhaust_later_characters(export, monkeypatch):
+    job = export([["甲", "佩拉", "黑塔", "貊泽", "三月七", "乙"]])
+    original = job.read_character
+    reads = []
+
+    def broken():
+        reads.append(job.reader.selected)
+        if job.reader.selected not in ("甲", "乙"):
+            raise PageError("切换到星魂页：界面未稳定")
+        original()
+
+    monkeypatch.setattr(job, "read_character", broken)
+    assert job.run() is False
+    assert job.read == ["甲", "乙"]
+    assert [item["name"] for item in job.failed] == ["佩拉", "黑塔", "貊泽", "三月七"]
+    assert all(reads.count(item["name"]) == 2 for item in job.failed)
+
+
+def test_navigation_failures_do_not_count_as_character_read_failures(export, monkeypatch):
+    job = export([["甲"], ["甲", "乙"]])
+    original = job.reader.select_avatar
+    failures = [True] * 3
+
+    def select(x, required=False):
+        if job.reader.page == 1 and x == 1 and failures:
+            failures.pop()
+            raise PageError("无法切换角色")
+        return original(x, required)
+
+    monkeypatch.setattr(job.reader, "select_avatar", select)
+    assert job.run() is True
+    assert job.read == ["甲", "乙"]
+    assert not job.failed
+    assert not any(job.attempts.values())
+
+
 def test_gives_up_when_interface_keeps_failing(export, tmp_path, monkeypatch):
     job = export([["甲", "乙"]])
     original = job.read_character
@@ -614,25 +769,39 @@ def test_stopped_run_keeps_previous_output(export, tmp_path, monkeypatch):
     assert json.loads((tmp_path / "characters.partial.json").read_text(encoding="utf-8"))["complete"] is False
 
 
-class SectionReader:
+class SectionReader(reader_module.CharacterReader):
     """读取层的替身：每段读取都成功，finish 的行为由测试指定。"""
 
     def __init__(self):
         self.tab = "detail"
         self.calls = []
         self.first_summary = full_summary_lines()
+        self.avatar = None
         self.switchable = False
+        self.frame = None
+        self.intro_lines = []
 
     def grab(self):
         pass
 
     def begin_summary(self):
-        return Done(full_summary_lines())
+        return Done(full_summary_lines()), self.avatar
+
+    def _match_avatar(self, frame):
+        return frame
+
+    def has_path_switch(self, frame):
+        return self.switchable
+
+    def _submit(self, frame, box):
+        assert self.tab == "info" and box == reader_module.INTRO_BOX
+        self.calls.append(("intro",))
+        return Done(self.intro_lines)
 
     def begin_detail(self):
         self.calls.append(("detail",))
         self.tab = "detail"
-        return {"summary": Done(self.first_summary), "element": "火", "switchable": self.switchable, "stats": "stats"}
+        return {"summary": (Done(self.first_summary), self.avatar), "element": "火", "stats": "stats"}
 
     def read_eidolon(self):
         self.calls.append(("eidolon",))
@@ -728,8 +897,8 @@ def test_problems_that_survive_the_reread_become_warnings(tmp_path):
     assert character["warnings"] == ["攻击力 总值不符"]
 
 
-def full_summary_lines(name="火花", without=()):
-    lines = summary_lines(name)
+def full_summary_lines(name="火花", without=(), *, path="欢愉"):
+    lines = summary_lines(name, path)
     for index, (label, value) in enumerate(TOTALS.items()):
         if label not in without:
             y = 369 + index * 36
@@ -756,7 +925,7 @@ def test_missing_total_is_reread_without_reopening_the_popup(tmp_path):
 
 def test_missing_crit_total_needs_no_warning(tmp_path):
     reader = SectionReader()
-    reader.begin_summary = lambda: Done(full_summary_lines(without=("暴击率",)))
+    reader.begin_summary = lambda: (Done(full_summary_lines(without=("暴击率",))), None)
     job = CharacterExport(reader, output=str(tmp_path / "out.json"), partial=str(tmp_path / "part.json"))
     reader.first_summary = full_summary_lines(without=("暴击率",))
     job.read_character()
@@ -765,7 +934,7 @@ def test_missing_crit_total_needs_no_warning(tmp_path):
 
 def test_total_that_cannot_be_read_is_reported(tmp_path):
     reader = SectionReader()
-    reader.begin_summary = lambda: Done(full_summary_lines(without=("防御力",)))
+    reader.begin_summary = lambda: (Done(full_summary_lines(without=("防御力",))), None)
     job = CharacterExport(reader, output=str(tmp_path / "out.json"), partial=str(tmp_path / "part.json"))
     reader.first_summary = full_summary_lines(without=("防御力",))
     job.read_character()
@@ -830,6 +999,110 @@ def test_trailblazer_keeps_ocr_name(tmp_path):
     assert character["name"] == "我起的名字"
     assert character["is_trailblazer"] is True
     assert character["path_switchable"] is True
+
+
+@pytest.mark.parametrize("avatar", ["CaelumPreservation", "StellePreservation"])
+def test_trailblazer_without_nickname_is_exported_and_deduplicated(tmp_path, avatar):
+    reader = SectionReader()
+    reader.avatar = Path(f"{avatar}.png")
+    reader.switchable = True
+    reader.first_summary = full_summary_lines("", path="存护")
+    reader.begin_summary = lambda: (Done(reader.first_summary), reader.avatar)
+    job = CharacterExport(reader, partial=str(tmp_path / "part.json"))
+
+    job.read_character()
+    character, = job.characters
+    assert character["name"] == "开拓者"
+    assert character["is_trailblazer"] and character["path_switchable"]
+    assert character["path"] == "存护"
+    assert character["warnings"] == ["未能识别开拓者昵称，使用默认名称「开拓者」"]
+
+    reader.first_summary = full_summary_lines("테스트", path="存护")
+    assert job._known(job._current_summary())
+    job.read_character()
+    assert job.characters == [character]
+
+    reader.avatar = Path("March7th.png")
+    reader.first_summary = full_summary_lines("三月七", path="存护")
+    job.read_character()
+    assert [item["name"] for item in job.characters] == ["开拓者", "三月七"]
+    assert job.characters[-1]["is_trailblazer"] is False
+
+
+def test_nickname_reread_replaces_fallback(tmp_path):
+    reader = SectionReader()
+    reader.avatar = Path("StelleElation.png")
+    reader.first_summary = full_summary_lines("")
+    reader.begin_summary = lambda: (Done(full_summary_lines("ひかり")), reader.avatar)
+    job = CharacterExport(reader, partial=str(tmp_path / "part.json"))
+    job.read_character()
+    character, = job.characters
+    assert character["name"] == "ひかり"
+    assert character["is_trailblazer"]
+    assert character["warnings"] == []
+
+
+@pytest.mark.parametrize("avatar", [None, Path("March7th.png")])
+def test_switch_button_alone_does_not_allow_missing_name(avatar):
+    reader = SectionReader()
+    reader.switchable = True
+    reader.avatar = avatar
+    reader.first_summary = full_summary_lines("", path="存护")
+    reader.begin_summary = lambda: (Done(reader.first_summary), reader.avatar)
+    reader.intro_lines = [L("角色简介", 1538, 394), L("精灵古怪的少女，来自星穹列车。", 1670, 430)]
+    with pytest.raises(parser.ParseError, match="未能识别角色名"):
+        CharacterExport(reader)._current_summary()
+
+
+def test_intro_identifies_trailblazer_without_an_avatar_asset(tmp_path):
+    reader = SectionReader()
+    reader.switchable = True
+    reader.first_summary = full_summary_lines("", path="同谐")
+    reader.begin_summary = lambda: (Done(reader.first_summary), reader.avatar)
+    reader.intro_lines = [L("角色简介", 1538, 394), L("登上星穹列车的少年。", 1605, 430),
+                          L("为了消除星核带来的危机，选择与星穹列车同行。", 1670, 463)]
+    job = CharacterExport(reader, partial=str(tmp_path / "part.json"))
+    job.read_character()
+    character, = job.characters
+    assert character["name"] == "开拓者"
+    assert character["path"] == "同谐"
+    assert character["is_trailblazer"]
+    assert reader.calls.count(("intro",)) == 1
+    assert reader.tab == "detail"
+
+    reader.first_summary = full_summary_lines("三月七", path="同谐")
+    assert job._known(job._current_summary())
+    job.read_character()
+    assert job.characters == [character]
+
+
+@pytest.mark.parametrize("prefix", ["Stelle", "Caelum"])
+def test_avatar_matching_uses_selected_slot_and_discovers_new_forms(tmp_path, monkeypatch, prefix):
+    assets = reader_module.AVATAR_ASSETS
+    new_form = tmp_path / f"{prefix}NewPath.png"
+    new_form.write_bytes((assets / f"{prefix}Preservation.png").read_bytes())
+    march = tmp_path / "March7th.png"
+    march.write_bytes((assets / march.name).read_bytes())
+    monkeypatch.setattr(reader_module, "AVATAR_ASSETS", tmp_path)
+
+    def frame(selected):
+        canvas = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        for x, asset in ((600, new_form), (708, march)):
+            avatar = cv2.imread(str(asset))
+            avatar = cv2.resize(avatar, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_AREA)
+            h, w = avatar.shape[:2]
+            left, top = x - w // 2, 65 - h // 2
+            canvas[top:top + h, left:left + w] = avatar
+            cv2.circle(canvas, (x, 65), 35, (200, 180, 120), 2)
+        cv2.circle(canvas, (selected, 65), 44, (245, 245, 245), 2)
+        return Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
+
+    reader = reader_module.CharacterReader()
+    try:
+        assert reader._match_avatar(frame(600)) == new_form
+        assert reader._match_avatar(frame(708)) == march
+    finally:
+        reader.close()
 
 
 def test_avatar_slots_are_found_at_any_offset():
@@ -904,6 +1177,132 @@ def eidolon_reader(monkeypatch):
         monkeypatch.setattr(reader_module, "auto", SimpleNamespace(take_screenshot=capture))
 
     return reader, feed, clock
+
+
+def ui_frame(color=0, box=reader_module.RIGHT_PANEL):
+    frame = Image.new("RGB", (1920, 1080))
+    x, y, width, height = box
+    frame.paste((color, color, color), (x, y, x + width, y + height))
+    return frame
+
+
+def test_settle_requires_elapsed_stability_not_two_identical_captures(eidolon_reader):
+    reader, feed, clock = eidolon_reader
+    # 中间两张重复帧仍在淡入，不能仅因为两次截图相同就开始 OCR。
+    feed([ui_frame(100)] * 2 + [ui_frame(200)] * 4)
+    assert reader._settle(reader_module.RIGHT_PANEL, ui_frame()).getpixel((1500, 150)) == (200, 200, 200)
+    assert clock.captures >= 5
+
+
+def test_settle_detects_cumulative_slow_fade(eidolon_reader):
+    reader, feed, clock = eidolon_reader
+    feed([ui_frame(color) for color in range(100, 141, 4)])
+    frame = reader._settle(reader_module.RIGHT_PANEL)
+    assert frame.getpixel((1500, 150)) == (140, 140, 140)
+    assert clock.captures > 11
+
+
+@pytest.mark.parametrize("key", ["esc", "e"])
+def test_action_does_not_repeat_input_after_response_during_long_animation(key, eidolon_reader, monkeypatch):
+    reader, feed, _ = eidolon_reader
+    feed([ui_frame(color) for color in [0, 100, 200, 100, 200, 100, 200, 200, 200]])
+    presses = []
+    monkeypatch.setattr(reader, "_press", presses.append)
+    frame = reader._act(lambda: reader._press(key), reader_module.RIGHT_PANEL, timeout=0.2)
+    assert frame.getpixel((1500, 150)) == (200, 200, 200)
+    assert presses == [key]
+
+
+def test_action_retries_input_that_did_not_respond(eidolon_reader):
+    reader, feed, _ = eidolon_reader
+    feed([ui_frame()] * 5 + [ui_frame(200)] * 5)
+    actions = []
+    reader._act(lambda: actions.append(1), reader_module.RIGHT_PANEL, timeout=0.2)
+    assert actions == [1, 1]
+
+
+def test_action_failure_identifies_the_operation(eidolon_reader):
+    reader, feed, _ = eidolon_reader
+    feed([ui_frame()])
+    with pytest.raises(PageError, match="退出遗器详情"):
+        reader._act(lambda: None, reader_module.RIGHT_PANEL, operation="退出遗器详情")
+
+
+def test_eidolon_tab_does_not_require_animated_artwork_to_stop(eidolon_reader, monkeypatch):
+    reader, feed, clock = eidolon_reader
+    frames = [ui_frame()]
+    for color in [100, 200] * 20:
+        frame = ui_frame(color)
+        x, y, width, height = reader_module.TAB_TITLE
+        frame.paste((255, 255, 255), (x, y, x + width, y + height))
+        frames.append(frame)
+    feed(frames)
+    reader.tab = "relics"
+    clicks = []
+    monkeypatch.setattr(reader, "_click", lambda *pos: clicks.append(pos))
+    reader.open_tab("eidolons")
+    assert reader.tab == "eidolons"
+    assert clicks == [(reader_module.TAB_X, reader_module.TAB_Y["eidolons"])]
+    assert clock.now < 0.5
+
+
+@pytest.mark.parametrize("tab", ["detail", "light_cone", "traces", "relics"])
+def test_tab_change_can_leave_the_right_panel_unchanged(tab, eidolon_reader, monkeypatch):
+    reader, feed, clock = eidolon_reader
+    feed([ui_frame()] + [ui_frame(255, reader_module.TAB_TITLE)] * 15)
+    clicks = []
+    monkeypatch.setattr(reader, "_click", lambda *pos: clicks.append(pos))
+    reader.open_tab(tab)
+    assert reader.tab == tab
+    assert clicks == [(reader_module.TAB_X, reader_module.TAB_Y[tab])]
+    assert clock.now < 0.6
+
+
+def test_panel_can_settle_with_sparse_background_particles(eidolon_reader, monkeypatch):
+    reader, feed, clock = eidolon_reader
+    frames = [ui_frame()]
+    for color in [100, 200] * 20:
+        frame = ui_frame(255, reader_module.TAB_TITLE)
+        # 与 30 帧实机相近：右栏约 0.8% 像素持续变化，正文不变。
+        frame.paste((color, color, color), (1500, 120, 1540, 160))
+        frames.append(frame)
+    feed(frames)
+    monkeypatch.setattr(reader, "_click", lambda *pos: None)
+    reader.open_tab("traces")
+    assert clock.now < 0.6
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_delayed_avatar_response_keeps_original_reference(required, eidolon_reader, monkeypatch):
+    reader, feed, _ = eidolon_reader
+    reader.tab = "detail"
+    old = ui_frame()
+    new = ui_frame(200)
+    x, y, width, height = reader_module.BREADCRUMB
+    new.paste((255, 255, 255), (x, y, x + width, y + height))
+    feed([old] * 9 + [new] * 10)
+    clicks = []
+    monkeypatch.setattr(reader, "_click", lambda *pos: clicks.append(pos))
+    assert reader.select_avatar(600, required=required)
+    assert clicks == [(600, reader_module.AVATAR_Y)]
+
+
+def test_first_avatar_animation_is_not_a_character_name_change(eidolon_reader, monkeypatch):
+    reader, feed, _ = eidolon_reader
+    reader.tab = "detail"
+    feed([ui_frame()] + [ui_frame(255, (440, 60, 80, 40))] * 40)
+    monkeypatch.setattr(reader, "_click", lambda *pos: None)
+    with pytest.raises(PageError, match="无法切换角色"):
+        reader.select_avatar(600, required=True)
+
+
+def test_avatar_summary_must_respond_before_reading(eidolon_reader, monkeypatch):
+    reader, feed, _ = eidolon_reader
+    reader.tab = "detail"
+    feed([ui_frame()] + [ui_frame(255, reader_module.BREADCRUMB)] * 40)
+    monkeypatch.setattr(reader, "_click", lambda *pos: None)
+    with pytest.raises(PageError, match="详情区域"):
+        reader.select_avatar(600, required=True)
 
 
 def test_eidolon_empty_first_frames_are_not_six(eidolon_frames, eidolon_reader):
@@ -1020,6 +1419,43 @@ def test_eidolon_avatar_waits_past_previous_characters_nodes(eidolon_frames, eid
     for frame in [renamed, loading, ready]:
         frame.paste((255, 255, 255), (x, y, x + width, y + height))
     feed([old] + [renamed] * 5 + [loading] * 2 + [ready] * 5)
+    monkeypatch.setattr(reader, "_click", lambda *args: None)
+    assert reader.select_avatar(600, required=True)
+    assert reader.read_eidolon() == 2
+
+
+def test_eidolon_background_motion_cannot_confirm_new_character(eidolon_frames, eidolon_reader, monkeypatch):
+    _, _, six, two, _ = eidolon_frames
+    reader, feed, _ = eidolon_reader
+    frames = [six.copy()]
+    x, y, width, height = reader_module.BREADCRUMB
+    for index in range(20):
+        frame = six.copy()
+        frame.paste((255, 255, 255), (x, y, x + width, y + height))
+        # 右侧立绘已在动，但六个节点仍是上个角色，不能提前把 2 魂读成 6 魂。
+        color = 100 if index % 2 else 200
+        frame.paste((color, color, color), (1480, 120, 1880, 300))
+        frames.append(frame)
+    ready = two.copy()
+    ready.paste((255, 255, 255), (x, y, x + width, y + height))
+    feed(frames + [ready] * 5)
+    monkeypatch.setattr(reader, "_click", lambda *args: None)
+    assert reader.select_avatar(600, required=True)
+    assert reader.read_eidolon() == 2
+
+
+def test_eidolon_fading_previous_nodes_must_settle_before_reading(eidolon_frames, eidolon_reader, monkeypatch):
+    _, _, six, two, _ = eidolon_frames
+    reader, feed, _ = eidolon_reader
+    x, y, width, height = reader_module.BREADCRUMB
+    frames = [six.copy()]
+    for brightness in [1, 1, 0.98, 0.94, 0.90, 0.86, 0.82, 0.78]:
+        frame = six.point(lambda value: round(value * brightness))
+        frame.paste((255, 255, 255), (x, y, x + width, y + height))
+        frames.append(frame)
+    ready = two.copy()
+    ready.paste((255, 255, 255), (x, y, x + width, y + height))
+    feed(frames + [ready] * 8)
     monkeypatch.setattr(reader, "_click", lambda *args: None)
     assert reader.select_avatar(600, required=True)
     assert reader.read_eidolon() == 2
