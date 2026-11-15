@@ -4348,13 +4348,21 @@ msgstr "提升晉升等級，推薦在最低職級選擇默認策略。提升職
 msgid "开启后，仅在首领节点尝试装备武器，只推荐在最低职级时开启"
 msgstr "開啓後，僅在首領節點嘗試裝備武器，只推薦在最低職級時開啓"
 
-#: app/setting_interface.py:583
-msgid "提升晋升等级"
-msgstr "提升晉升等級"
+#: app/setting_interface.py:598
+msgid "刷周积分"
+msgstr "刷每週積分"
 
-#: app/setting_interface.py:584
-msgid "提升职级等级"
-msgstr "提升職級等級"
+#: app/setting_interface.py:599
+msgid "刷晋升点"
+msgstr "刷晉升點"
+
+#: app/setting_interface.py:600
+msgid "冲职级"
+msgstr "衝職級"
+
+#: app/setting_interface.py:626
+msgid "晋升点封顶档"
+msgstr "晉升點封頂檔"
 
 #: app/setting_interface.py:586
 msgid "快捷配置"
@@ -4363,14 +4371,6 @@ msgstr "快捷配置"
 #: app/setting_interface.py:3443
 msgid "已应用快捷配置"
 msgstr "已應用快捷配置"
-
-#: app/setting_interface.py:3468
-msgid "当前为“提升晋升等级”模式"
-msgstr "當前爲“提升晉升等級”模式"
-
-#: app/setting_interface.py:3483
-msgid "当前为“提升职级等级”模式"
-msgstr "當前爲“提升職級等級”模式"
 
 #: app/card/stationprioritysettingcard.py:112
 msgid "站点优先级配置"
@@ -6994,6 +6994,10 @@ msgstr "遊戲需要手動登入，請在 Android 實體屏或模擬器中完成
 msgid "Android 游戏进程已退出，请检查游戏与设备的后台设置后重试"
 msgstr "Android 遊戲程序已退出，請檢查遊戲與裝置的後臺設定後重試"
 
+#: module/game/adb.py:290
+msgid "重新启动后，Android 游戏窗口再次消失"
+msgstr "重新啟動後，Android 遊戲視窗再次消失"
+
 #: module/game/adb.py:148
 msgid "游戏未能回到目标 Android 屏幕，请结束游戏后重试"
 msgstr "遊戲未能回到 Android 虛擬屏，請結束遊戲後重試"
@@ -7741,6 +7745,10 @@ msgstr "每日實訓活躍度 {activity}/{maximum}"
 #: tasks/touch/rewards.py:216
 msgid "奖励检查完成，{daily_summary}"
 msgstr "獎勵檢查完成（{daily_summary}）"
+
+#: tasks/touch/power.py:647
+msgid "已完成 {count} 次挑战"
+msgstr "已完成 {count} 次挑戰"
 
 #: tasks/touch/power.py:534
 msgid "已完成 {count} 次挑战，剩余开拓力 {power}/300"

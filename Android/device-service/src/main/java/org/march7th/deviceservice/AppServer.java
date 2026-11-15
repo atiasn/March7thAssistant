@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** APK 专用的单会话传输。首个连接通过 S1 握手后关闭监听，断线即善后并退出。 */
 public final class AppServer {
     public static final String BUSY = "service_busy";
+    public static final String ROOT_STDIN_READY = "M7A_APP_STDIN_READY";
     private static final long START_TIMEOUT_NS = TimeUnit.SECONDS.toNanos(12);
 
     private final ServerSocket listener;
@@ -162,8 +163,16 @@ public final class AppServer {
         listener.close();
         socket.setSoTimeout(0);
         DeviceService.Session session = service.openSession(event -> { }, false);
-        try {
-            MessageCodec.write(out, service.handle(session, hello));
+        try (AppPreviewServer preview = AppPreviewServer.open(service, handshake)) {
+            Message response = service.handle(session, hello);
+            if (preview != null) {
+                try {
+                    response.header.put("preview_port", preview.port());
+                } catch (JSONException ignored) {
+                    // 预览不可用时仍继续运行任务。
+                }
+            }
+            MessageCodec.write(out, response);
             while (!stopping.get() && !service.shutdownRequested()) {
                 Message request = MessageCodec.read(in, Protocol.MAX_HEADER_BYTES, Protocol.MAX_REQUEST_PAYLOAD_BYTES);
                 if (request == null) {
@@ -180,12 +189,16 @@ public final class AppServer {
     /** 已获授权的 su 入口。令牌走 stdin，关闭管道时结束租约。 */
     @SuppressWarnings("deprecation")
     public static void main(String[] args) {
-        if (Process.myUid() != Process.SHELL_UID || args.length != 1) {
+        int uid = Process.myUid();
+        if (uid != Process.SHELL_UID || args.length != 1) {
+            Logger.w("invalid Root service entry: uid=" + uid + ", argc=" + args.length);
             System.exit(2);
         }
         Looper.prepareMainLooper();
         BufferedReader owner = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         try {
+            System.out.println(ROOT_STDIN_READY);
+            System.out.flush();
             AppServer server = start(args[0], owner.readLine());
             System.out.println("M7A_APP_PORT " + server.port());
             System.out.flush();
