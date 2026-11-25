@@ -16,10 +16,12 @@ from unittest.mock import Mock
 from PIL import Image, ImageDraw
 import pytest
 
+from module.automation.input_base import observe_input_dispatch
 from module.game import adb as backend
 from module.game import adb_ready
 from module.game import adb_transport as transport
 from tasks.game import adb_check
+from utils import paths
 from utils.pause import RunStopRequested, pause_ctl
 
 
@@ -492,6 +494,29 @@ def test_disconnect_aborts_without_replaying_input_and_next_run_reconnects(adb, 
     assert sum(request["cmd"] == "tap" for request in s1.requests) == 1
 
 
+@pytest.mark.parametrize("state", ["blocked", "delivered", "reply-lost"])
+def test_input_observer_distinguishes_rejected_and_dispatched_taps(adb, s1, state):
+    controller, _ = adb
+    controller.start_game_process()
+    inputs = controller.get_input_handler()
+    assert inputs.reports_dispatch is True
+    if state == "blocked":
+        s1.event("task_display_changed", to=0)
+        s1.event("sdk_window_shown", display_id=0)
+        controller.get_runtime_status()
+    elif state == "reply-lost":
+        s1.drop_command = "tap"
+    dispatched = []
+    with observe_input_dispatch(dispatched.append):
+        if state == "reply-lost":
+            with pytest.raises(transport.AdbError):
+                inputs.mouse_click(38, 59)
+        else:
+            assert inputs.mouse_click(38, 59) is (state == "delivered")
+    assert len(dispatched) == int(state != "blocked")
+    assert sum(request["cmd"] == "tap" for request in s1.requests) == int(state != "blocked")
+
+
 def test_watchdog_blocks_input_until_recovered_and_stops_on_manual_login(adb, s1):
     controller, _ = adb
     controller.start_game_process()
@@ -581,7 +606,7 @@ def emulator_screencap(adb, monkeypatch):
     return controller, adb_output
 
 
-def test_adb_check_uses_display_zero_physical_id_after_move_back(emulator_screencap, s1, monkeypatch, tmp_path):
+def test_adb_check_uses_display_zero_physical_id_after_move_back(emulator_screencap, s1, monkeypatch, isolated_layout):
     controller, adb_output = emulator_screencap
     primary_id = "4619827259835644673"
     explicit_capture = (*_SCREEN_CAP, "-d", primary_id)
@@ -622,13 +647,11 @@ def test_adb_check_uses_display_zero_physical_id_after_move_back(emulator_screen
     for module in (adb_ready, adb_check):
         monkeypatch.setattr(module, "_load_template", lambda name: name)
         monkeypatch.setattr(module, "_match", match)
-    monkeypatch.chdir(tmp_path)
-
     assert adb_check.run(controller) is True
     assert [call.args[0] for call in adb_output.call_args_list] == [_SCREEN_CAP, _DISPLAY_LIST] + [explicit_capture] * 3
     touch_targets = [request["display_id"] for request in s1.requests if request["cmd"] == "tap"]
     assert touch_targets == [0]
-    screenshot, = (tmp_path / "logs" / "screenshots").glob("adb-check-*.png")
+    screenshot, = Path(paths.error_screenshots_dir()).glob("adb-check-*.png")
     with Image.open(screenshot) as frame:
         assert frame.getpixel((0, 0)) == menu_color
 

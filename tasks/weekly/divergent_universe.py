@@ -9,6 +9,7 @@ from module.notification.notification import NotificationLevel
 from tasks.base.base import Base
 from tasks.base.task_steps import optional_reward
 from utils.date import Date
+from module.overview import plan
 from utils.game_key_templates import find_interact_prompt
 from typing import Literal, Tuple, Optional
 import numpy as np
@@ -16,7 +17,7 @@ import time
 import os
 import re
 from tasks.power.power import Power
-from tasks.weekly.weekly_reward import wait_for_weekly_reward
+from tasks.weekly.weekly_reward import claim_weekly_reward
 
 
 class DivergentUniverse:
@@ -32,51 +33,35 @@ class DivergentUniverse:
 
     @staticmethod
     def _get_count_config(cycle: Literal["daily", "weekly"]):
-        if cycle == "weekly":
-            return "divergent_universe_weekly_completed_count", "divergent_universe_weekly_completed_timestamp"
-        return "divergent_universe_daily_completed_count", "divergent_universe_daily_completed_timestamp"
-
-    @staticmethod
-    def _is_count_in_current_cycle(timestamp: float, cycle: Literal["daily", "weekly"]) -> bool:
-        if not timestamp:
-            return False
-
-        if cycle == "weekly":
-            return not Date.is_next_mon_x_am(timestamp, cfg.refresh_hour)
-        return not Date.is_next_x_am(timestamp, cfg.refresh_hour)
+        return plan.count_keys(cycle)
 
     @staticmethod
     def get_recorded_run_count(cycle: Literal["daily", "weekly"], sync: bool = True) -> int:
-        count_key, timestamp_key = DivergentUniverse._get_count_config(cycle)
-        count = int(cfg.get_value(count_key, 0) or 0)
-        timestamp = float(cfg.get_value(timestamp_key, 0) or 0)
-        count = max(count, 0)
-
-        if not DivergentUniverse._is_count_in_current_cycle(timestamp, cycle):
-            if sync and (count != 0 or timestamp != 0):
-                DivergentUniverse.reset_recorded_run_count(cycle)
-            return 0
-
+        count, needs_reset = plan.current_count(cfg, cycle)
+        if sync and needs_reset:
+            DivergentUniverse.reset_recorded_run_count(cycle)
         return count
 
     @staticmethod
     def reset_recorded_run_count(cycle: Optional[Literal["daily", "weekly"]] = None):
         cycles = (cycle,) if cycle else ("daily", "weekly")
+        values = {}
         for current_cycle in cycles:
             count_key, timestamp_key = DivergentUniverse._get_count_config(current_cycle)
-            cfg.set_value(count_key, 0)
-            cfg.set_value(timestamp_key, 0)
+            values.update({count_key: 0, timestamp_key: 0})
+        cfg.set_values(values)
 
     @staticmethod
     def record_completed_run() -> dict:
         now = time.time()
         counts = {}
+        values = {}
         for cycle in ("daily", "weekly"):
             count_key, timestamp_key = DivergentUniverse._get_count_config(cycle)
-            count = DivergentUniverse.get_recorded_run_count(cycle) + 1
-            cfg.set_value(count_key, count)
-            cfg.set_value(timestamp_key, now)
+            count = DivergentUniverse.get_recorded_run_count(cycle, sync=False) + 1
+            values.update({count_key: count, timestamp_key: now})
             counts[cycle] = count
+        cfg.set_values(values)
         return counts
 
     def start(self, universe_type: Optional[Literal["normal", "cycle"]] = None) -> bool:
@@ -144,15 +129,13 @@ class DivergentUniverse:
         with optional_reward("差分宇宙周期奖励"):
             if not auto.click_element("./assets/images/share/base/RedExclamationMark.png", "image", 0.9, crop=(0 / 1920, 877.0 / 1080, 422.0 / 1920, 202.0 / 1080)):
                 return False
-            if not auto.click_element("./assets/images/zh_CN/universe/one_key_receive.png", "image", 0.9, max_retries=10):
-                return False
-            claimed = wait_for_weekly_reward()
-            if claimed:
-                time.sleep(2)
+            def notify(image):
                 with optional_reward("差分宇宙周期奖励通知"):
-                    Base.send_notification_with_screenshot(cfg.notify_template['SimulatedUniverseRewardClaimed'], NotificationLevel.ALL)
-                auto.click_element("./assets/images/zh_CN/base/click_close.png", "image", 0.8, max_retries=10)
-                time.sleep(1)
+                    Base.send_notification_with_screenshot(
+                        cfg.notify_template['SimulatedUniverseRewardClaimed'], NotificationLevel.ALL, image)
+
+            claimed = claim_weekly_reward(on_receipt=notify)
+            if claimed:
                 auto.press_key("esc")
         return claimed
 

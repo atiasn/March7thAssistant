@@ -10,15 +10,18 @@ from module.automation import auto
 from module.automation.automation import screenshot_retry_timeout
 from module.automation.input_base import input_deadline, input_deadline_reached, limit_input_deadline
 from module.config import cfg
+from module.overview.plan import echo_day_due
+from module.overview.readings import save_reading
 from module.game.adb_transport import AdbError
 from module.localization import get_raw_instance_names, tr
 from module.logger import log
 from module.screen import screen
 from tasks.base.list_drag import changed_ratio, drag_list
-from tasks.base.task_steps import GameRecoveryError
+from tasks.base.task_steps import FATAL_GAME_ERRORS, GameRecoveryError
 from tasks.power.instance import Instance, TeamPresetUnavailable
 from tasks.power.battle import battle_speed_visible, ensure_double_speed
 from tasks.power.policy import (
+    remaining_plan,
     BATTLE_TIMEOUT, ENTRY_TIMEOUT, DEFEAT_RETRIES, CAVERN, CRIMSON_CALYX, ECHO, GOLDEN_CALYX,
     INSTANCE_LIMITS, ORNAMENT, STAGNANT_SHADOW, BattleDefeat, InstanceTeamUnavailable, PowerError, RelicBagFull,
     SupportDemand, batch_limit, normalize as _normalize,
@@ -61,6 +64,7 @@ EXIT = (414 / 1920, 906 / 1080, 1075 / 1920, 87 / 1080)
 DIALOG = (259 / 1920, 226 / 1080, 1399 / 1920, 505 / 1080)
 SUPPLEMENT_CANCEL = (474 / 1920, 740 / 1080, 450 / 1920, 79 / 1080)
 TRANSIENT_FRAME_ERRORS = ("frame_clock_unavailable", "frame_timeout")
+DEFEAT_TITLES = ("挑战失败", "战斗失败")
 
 
 def _read_number(crop, parse, error):
@@ -68,7 +72,9 @@ def _read_number(crop, parse, error):
 
 
 def read_power(crop=POWER_VALUE):
-    return _read_number(crop, parse_power, "未能确认当前开拓力")
+    value = _read_number(crop, parse_power, "未能确认当前开拓力")
+    save_reading(cfg, "overview_power", value)
+    return value
 
 
 def _read_echo_rewards():
@@ -423,6 +429,43 @@ def _exit_result(instance_screen):
     return screen.current_screen
 
 
+def _exit_defeat(instance_screen):
+    """战败页可能先显示点击继续，退出后保留战败结果交给上层处理。"""
+    deadline = time.monotonic() + 30
+    attempts = 0
+    next_attempt = 0.0
+    with limit_input_deadline(deadline):
+        while not input_deadline_reached(time.monotonic()):
+            pause_ctl.check_stop()
+            try:
+                for target in ("main", instance_screen, "guide3"):
+                    if screen.check_screen(target):
+                        if target != "main":
+                            screen.change_to("main", max_recursion=0)
+                        return
+                if attempts < 3 and time.monotonic() >= next_attempt:
+                    point = auto.find_element("退出关卡", "text", crop=EXIT)
+                    if not point:
+                        # 桌面版同样兼容点击战败标题关闭结果页。只对新画面确认的战败页操作。
+                        point = auto.find_element(DEFEAT_TITLES, "text", crop=RESULT_TITLE)
+                    pause_ctl.check_stop()
+                    if input_deadline_reached(time.monotonic()):
+                        break
+                    if point:
+                        attempts += 1
+                        # 输入回执缺失也先等转场，不立即改点或重发。
+                        auto.click_element_with_pos(point)
+                        next_attempt = time.monotonic() + 5
+            except FATAL_GAME_ERRORS as error:
+                if not isinstance(error, AdbError) or error.code not in TRANSIENT_FRAME_ERRORS:
+                    raise
+                log.warning(f"暂时无法确认战败退出画面，等待恢复：{error}")
+            except Exception as error:
+                log.warning(f"暂时无法确认战败退出画面，等待恢复：{error}")
+            time.sleep(0.5)
+    raise PowerError("已确认战败，未能返回可操作界面")
+
+
 def classify_auto_button(pixels, glyph):
     """同一枚半透明图标的金色和灰色状态，用图标内外的色差判断。"""
     red, green, blue = np.moveaxis(pixels.astype(np.int16), -1, 0)
@@ -441,7 +484,7 @@ def _observe_battle(glyph, *, allow_team, check_popups, awaiting_repeat_transiti
     if auto.find_element(f"{IMAGES}/victory.png", "image", 0.88, crop=RESULT_TITLE):
         return "victory", None
     if check_popups:
-        if auto.find_element(("挑战失败", "战斗失败"), "text", crop=RESULT_TITLE):
+        if auto.find_element(DEFEAT_TITLES, "text", crop=RESULT_TITLE):
             return "defeat", None
         _check_popup()
     if auto.find_element(f"{IMAGES}/pause.png", "image", 0.86, crop=BATTLE_CONTROLS):
@@ -500,8 +543,7 @@ def _wait_battle(*, repeated=False, instance_screen="calyx", verify_team=False):
         if state in ("battle", "team"):
             left_result = True
         if state == "defeat":
-            _exit_result(instance_screen)
-            screen.change_to("main", max_recursion=0)
+            _exit_defeat(instance_screen)
             raise BattleDefeat("副本挑战失败，已退出关卡")
         if state == "battle":
             if not saw_battle:
@@ -555,6 +597,17 @@ def _wait_battle(*, repeated=False, instance_screen="calyx", verify_team=False):
 
 
 def _run_instance(instance_type, name, planned, *, borrow_for_daily=False, on_settlement=None):
+    """逐批挑战。结束时记下剩余的开拓力，总览从这个数估算恢复。"""
+    balance = []
+    try:
+        yield from _run_batches(instance_type, name, planned, balance, borrow_for_daily=borrow_for_daily,
+                                on_settlement=on_settlement)
+    finally:
+        if balance:
+            save_reading(cfg, "overview_power", balance[-1])
+
+
+def _run_batches(instance_type, name, planned, balance, *, borrow_for_daily=False, on_settlement=None):
     instance_screen, cost, _ = INSTANCES[instance_type]
     limit = batch_limit(cfg, instance_type)
     demand = borrow_for_daily if isinstance(borrow_for_daily, SupportDemand) else SupportDemand(borrow_for_daily)
@@ -562,7 +615,7 @@ def _run_instance(instance_type, name, planned, *, borrow_for_daily=False, on_se
     if instance_type == ORNAMENT:
         from tasks.touch import ornament
 
-        yield from ornament.run_instance(name, planned, limit, demand, on_settlement)
+        yield from ornament.run_instance(name, planned, limit, demand, on_settlement, balance)
         return
 
     _select_category(instance_type)
@@ -611,8 +664,13 @@ def _run_instance(instance_type, name, planned, *, borrow_for_daily=False, on_se
     borrowed = False
     retries = 0
     cleaned = False
+    completed = 0
     while remaining is None or remaining > 0:
+        from utils.runs import DETAIL_TEXT, publish_detail
         practice = quota == 0
+        total = planned or completed + (min(quota, power // cost) if is_echo else power // cost)
+        if total > completed:
+            publish_detail(DETAIL_TEXT["instance"], name=name, index=completed + 1, total=total)
         waves = limit if remaining is None else min(remaining, limit)
         if practice:
             waves = 1
@@ -668,6 +726,7 @@ def _run_instance(instance_type, name, planned, *, borrow_for_daily=False, on_se
             continue
 
         demand.won(borrowed)
+        completed += waves
         yield waves
         log.info(f"已结算 {waves} 次")
         previous, retries = waves, 0
@@ -675,6 +734,7 @@ def _run_instance(instance_type, name, planned, *, borrow_for_daily=False, on_se
             remaining -= waves
         if not practice:
             power -= waves * cost
+            balance.append(power)
         if on_settlement is not None:
             on_settlement(waves, None)
         if is_echo and not practice:
@@ -694,7 +754,7 @@ def _run_instance(instance_type, name, planned, *, borrow_for_daily=False, on_se
 
 
 def run_weekly_echo(*, borrow_for_daily=False):
-    if date.today().isoweekday() < cfg.echo_of_war_start_day_of_week:
+    if not echo_day_due(cfg, date.today()):
         log.info(f"历战余响设为周{cfg.echo_of_war_start_day_of_week}开始，跳过本次")
         return True
     name = cfg.instance_names.get(ECHO)
@@ -718,7 +778,7 @@ def _run(borrow_for_daily, on_settlement=None):
     def run_instance(instance_type, name, planned):
         return _run_instance(instance_type, name, planned, borrow_for_daily=demand, on_settlement=on_settlement)
 
-    plan = cfg.power_plan
+    plan = remaining_plan(cfg)
     if plan:
         complete = run_plan(cfg, plan, run_instance)
         if not complete or not getattr(cfg, "power_plan_continue", True):

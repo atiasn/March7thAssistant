@@ -14,6 +14,11 @@ from tasks.power.policy import plan_paid_batch
 from utils.pause import RunStopRequested
 
 
+@pytest.fixture(autouse=True)
+def recorded_power(monkeypatch):
+    monkeypatch.setattr(power, "save_reading", Mock())
+
+
 @pytest.mark.parametrize(("text", "expected"), [
     ("0/300", 0),
     (" ９８ ／ 300 ", 98),
@@ -358,6 +363,7 @@ def test_touch_ornament_repeats_mixed_payment_and_keeps_unfunded_plan(monkeypatc
     assert [args.args[0] for args in select.call_args_list] == [6, 2]
     click.assert_called_once_with("再来一次", power.REPEAT)
     balance.assert_called_once_with(ornament.INDEX_POWER)
+    power.save_reading.assert_called_once_with(config, "overview_power", 14)
     stock.assert_called_once_with(ornament.auto, ornament.INDEX_IMMERSIFIERS)
     assert exit_result.call_count == 2
     assert fill.call_args_list == (
@@ -589,6 +595,7 @@ def test_repeat_stops_at_plan_count_or_calculated_budget(monkeypatch, planned, a
     settlements = Mock()
     assert list(power._run_instance(power.GOLDEN_CALYX, "回忆之蕾", planned, on_settlement=settlements)) == [1, 1]
     assert settlements.call_args_list == [call(1, None)] * 2
+    power.save_reading.assert_called_once_with(power.cfg, "overview_power", available - 20)
     balance.assert_called_once_with()
     assert start.call_args_list == [
         call(power.GOLDEN_CALYX, "回忆之蕾", 1, borrow_for_daily=False, practice=False,
@@ -623,6 +630,7 @@ def test_echo_without_weekly_rewards_only_fights_for_an_explicit_plan(monkeypatc
     assert list(power._run_instance(power.ECHO, "毁灭的开端", planned)) == ([1] if planned else [])
     balance.assert_not_called()
     supplement.assert_not_called()
+    power.save_reading.assert_not_called()
     if planned:
         start.assert_called_once_with(power.ECHO, "毁灭的开端", 1, borrow_for_daily=False, practice=True,
                                       world_team=False, team_failure=None)
@@ -974,17 +982,19 @@ def test_sms_pending_thread_accepts_sticker_reply(monkeypatch):
     auto.click_element_with_pos.assert_called_once_with(sticker, offset=(55, 62))
 
 
-@pytest.mark.parametrize("amounts, increase", [([630, 300, 300], 300), ([0, 7, 5, 5], 300)])
-def test_supplement_uses_maximum_even_above_300_and_checks_zero_reserve(monkeypatch, amounts, increase):
+@pytest.mark.parametrize("stocks,after", [([630], 620), ([630], 380), ([0, 7], 440)])
+def test_supplement_uses_maximum_and_accepts_the_actual_balance(monkeypatch, stocks, after):
     cfg = SimpleNamespace(use_reserved_trailblaze_power=True, use_fuel=True)
     auto = Mock()
     auto.find_element.side_effect = lambda label, *_args, **_kwargs: label if label != "获得物品" else None
-    read = Mock(side_effect=amounts)
+    read = Mock(side_effect=stocks)
     monkeypatch.setattr(supplement, "read_number", read)
     navigate = Mock(check_screen=Mock(return_value=True))
+    read_balance = Mock(return_value=after)
     assert supplement.supplement(auto, navigate, cfg, 320, Mock(return_value="入口"),
-                                 Mock(return_value=320 + increase), return_screen="guide3") == 620
-    assert read.call_count == len(amounts)
+                                 read_balance, return_screen="guide3") == after
+    assert read.call_count == len(stocks)
+    read_balance.assert_called_once_with()
     assert auto.click_element_with_pos.call_args_list.count(call("确认")) == 2
     navigate.check_screen.assert_called_once_with("guide3")
 
@@ -996,12 +1006,14 @@ def test_supplement_reuses_previous_budget_without_resending_unconfirmed_exchang
     auto.find_element.side_effect = lambda label, *_args, **_kwargs: label if label != "获得物品" else None
     screen = Mock(check_screen=Mock(return_value=True))
     read_balance = Mock(side_effect=[after])
-    monkeypatch.setattr(supplement, "read_number", Mock(side_effect=[30, 20, 20]))
+    stock = Mock(side_effect=[30])
+    monkeypatch.setattr(supplement, "read_number", stock)
 
     assert supplement.supplement(auto, screen, cfg, 80, Mock(return_value="入口"), read_balance,
                                  return_screen="guide3") == 80
     assert auto.click_element_with_pos.call_args_list.count(call("确认")) == 2
     read_balance.assert_called_once_with()
+    stock.assert_called_once()
     screen.check_screen.assert_called_once_with("guide3")
 
 
