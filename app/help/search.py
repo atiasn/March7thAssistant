@@ -4,9 +4,10 @@ import html
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, ScrollArea, SubtitleLabel, isDarkTheme, setFont
+from qfluentwidgets import CaptionLabel, SubtitleLabel, isDarkTheme, setFont
 
 from app.common.mascot import Mascot, load_mascot
+from app.common.scroll_area import PageScrollArea
 from app.overview.style import accent, css, text_color
 from app.overview.widgets import LinkButton
 from app.pages.common import Divider, is_evernight, secondary
@@ -83,7 +84,7 @@ class HitRow(QWidget):
 
 
 class EmptyState(QWidget):
-    """搜不到时：拿放大镜的三月七和「换个说法试试」。"""
+    """搜不到时显示当前主题的放大镜插画和搜索建议。"""
 
     suggestionClicked = Signal(str)
     MASCOT_HEIGHT = 200
@@ -141,7 +142,7 @@ class EmptyState(QWidget):
         painter.drawPixmap(round((self.width() - width) / 2), 8, self._pixmap)
 
 
-class HelpSearchPage(ScrollArea):
+class HelpSearchPage(PageScrollArea):
     hitClicked = Signal(object)
     suggestionClicked = Signal(str)
 
